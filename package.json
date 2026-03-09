@@ -1,0 +1,9 @@
+{
+  "name": "neon-babo-game",
+  "version": "1.0.0",
+  "description": "Neon Babo Duel",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
