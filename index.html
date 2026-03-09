@@ -3176,8 +3176,9 @@ CTF mode: ${ctfOn}. Pickup radius: ${ctfCfg.pickupRadius}px. Base radius: ${ctfC
     }
 
 if (roomId && myPlayer) {
-  socket.emit("playerUpdate", {
-    roomId,
+ socket.emit("playerUpdate", {
+  roomId,
+  state: {
     x: p1.x,
     y: p1.y,
     vx: p1.vx,
@@ -3186,8 +3187,10 @@ if (roomId && myPlayer) {
     hp: p1.hp,
     mana: p1.mana,
     alive: p1.alive
-  });
+  }
+});
 }   
+    
     updateHUD();
   }
 
