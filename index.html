@@ -626,6 +626,32 @@
 (() => {
   "use strict";
 
+const socket = io();
+
+let roomId = null;
+let myPlayer = null;
+let enemyPlayer = null;
+
+socket.on("queueStatus", (data) => {
+  console.log(data.message);
+});
+
+socket.on("matchFound", (data) => {
+  roomId = data.roomId;
+  myPlayer = data.you;
+  enemyPlayer = data.enemy;
+
+  console.log("Match found!", data);
+});
+
+socket.on("enemyUpdate", (enemyState) => {
+  enemyPlayer = enemyState;
+});
+
+socket.on("opponentLeft", () => {
+  alert("Opponent disconnected.");
+});
+
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const lerp=(a,b,t)=>a+(b-a)*t;
   const TAU=Math.PI*2;
