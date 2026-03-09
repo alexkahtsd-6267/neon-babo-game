@@ -1,0 +1,3207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Neon Babo Duel (Single-File)</title>
+  <style>
+    :root{
+      --bg:#070915;
+      --line: rgba(255,255,255,.12);
+      --text:#e9ecff;
+      --muted:#b7bddb;
+      --good:#5cffc1;
+      --warn:#ffd56a;
+      --bad:#ff5c7c;
+      --accent:#7aa7ff;
+      --accent2:#b07aff;
+      --shadow: 0 12px 36px rgba(0,0,0,.55);
+      --radius: 18px;
+      --uiHeight: 280px;
+    }
+    @media (max-width: 720px){ :root{ --uiHeight: 360px; } }
+    @media (max-width: 640px){ :root{ --uiHeight: 420px; } }
+
+    html,body{
+      height:100%;
+      margin:0;
+      background:
+        radial-gradient(1200px 900px at 20% 10%, rgba(122,167,255,.18), transparent 55%),
+        radial-gradient(900px 900px at 80% 20%, rgba(176,122,255,.16), transparent 55%),
+        radial-gradient(1000px 1000px at 50% 85%, rgba(92,255,193,.10), transparent 60%),
+        var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      overflow:hidden;
+      user-select:none;
+    }
+
+    canvas#game{ position:fixed; inset:0; width:100vw; height:100vh; display:block; }
+    .hud{ position:fixed; inset:0; pointer-events:none; }
+
+    .top{
+      position:absolute;
+      top: env(safe-area-inset-top, 0);
+      left: env(safe-area-inset-left, 0);
+      right: env(safe-area-inset-right, 0);
+      padding: 14px;
+      display:flex; gap:12px;
+      justify-content:space-between;
+      align-items:flex-start;
+    }
+
+    .panel{
+      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      padding: 10px 12px;
+      max-width: min(580px, 48vw);
+    }
+
+    .title{ font-weight:900; letter-spacing:.3px; font-size:14px; }
+    .tiny{ font-size:12px; color: var(--muted); }
+    .row{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
+
+    .meter{
+      width: 340px; max-width: 42vw;
+      height: 10px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 999px;
+      overflow:hidden;
+    }
+    .fill{ height:100%; width:50%; border-radius:999px; }
+    .p1{ background: linear-gradient(90deg, var(--good), var(--accent)); box-shadow: 0 0 16px rgba(92,255,193,.25); }
+    .p2{ background: linear-gradient(90deg, var(--bad), var(--accent2)); box-shadow: 0 0 16px rgba(255,92,124,.20); }
+    .manaFill{ background: linear-gradient(90deg, rgba(122,167,255,.85), rgba(176,122,255,.85)); box-shadow: 0 0 16px rgba(122,167,255,.20); }
+
+    .bottomBar{
+      position:fixed;
+      left: env(safe-area-inset-left,0);
+      right: env(safe-area-inset-right,0);
+      bottom: env(safe-area-inset-bottom,0);
+      height: var(--uiHeight);
+      padding: 10px 14px;
+      box-sizing:border-box;
+      pointer-events:none;
+      background: linear-gradient(180deg, rgba(7,9,21,0), rgba(7,9,21,0.82) 22%, rgba(7,9,21,0.95));
+      border-top: 1px solid rgba(255,255,255,.10);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      display:flex;
+      gap:12px;
+      align-items:stretch;
+      justify-content:space-between;
+    }
+
+    .controlsPanel{
+      pointer-events:auto;
+      background: rgba(10,14,30,.62);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 10px 12px;
+      max-width: min(980px, 74vw);
+      max-height: calc(var(--uiHeight) - 20px);
+      overflow:auto;
+    }
+
+    .rightPanel{
+      width:min(380px, 30vw);
+      max-height: calc(var(--uiHeight) - 20px);
+      overflow:auto;
+    }
+    @media (max-width: 920px){ .rightPanel{ display:none; } }
+
+    .grid{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; }
+    @media (max-width: 920px){ .grid{ grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 640px){
+      .grid{ grid-template-columns: 1fr; }
+      .meter{ max-width: 70vw; }
+      .panel{ max-width: 92vw; }
+    }
+
+    .group{
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.14);
+      border-radius: 14px;
+      padding: 10px;
+    }
+    label{ display:block; font-size:12px; color: var(--muted); margin-bottom:6px; }
+    .slRow{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+
+    input[type="range"]{ width: 240px; max-width: 34vw; }
+    input[type="number"]{
+      width: 120px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.18);
+      color: var(--text);
+      font-weight:800;
+      outline:none;
+    }
+    select{
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.18);
+      color: var(--text);
+      font-weight:800;
+      outline:none;
+    }
+    .pill{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      padding: 7px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.11);
+      background: rgba(10,14,30,.58);
+      color: var(--muted);
+      font-size:12px;
+      box-shadow: 0 10px 24px rgba(0,0,0,.35);
+      margin-right:8px;
+      margin-top:8px;
+      white-space:nowrap;
+    }
+    .dot{ width:9px;height:9px;border-radius:99px;background:var(--accent); box-shadow:0 0 12px rgba(122,167,255,.45); }
+    .dot.good{ background: var(--good); box-shadow:0 0 12px rgba(92,255,193,.45); }
+    .dot.warn{ background: var(--warn); box-shadow:0 0 12px rgba(255,213,106,.45); }
+    .dot.bad{ background: var(--bad); box-shadow:0 0 12px rgba(255,92,124,.45); }
+    .dot.orange{ background: #ff9c4a; box-shadow:0 0 12px rgba(255,156,74,.55); }
+
+    .hint{ margin-top:10px; font-size:12px; color: rgba(233,236,255,.70); line-height:1.35; white-space:pre-line; }
+
+    .overlay{
+      position:fixed; inset:0;
+      display:grid; place-items:center;
+      padding: 18px;
+      background: radial-gradient(1000px 800px at 50% 40%, rgba(10,14,30,.75), rgba(7,9,21,.86));
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      z-index: 10;
+      overflow:auto;
+    }
+    .card{
+      width:min(1120px, 96vw);
+      background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.03));
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 24px;
+      box-shadow: 0 24px 70px rgba(0,0,0,.65);
+      padding: 18px;
+    }
+    .cardHeader{
+      display:flex; justify-content:space-between; gap:12px; align-items:flex-start;
+      margin-bottom: 10px;
+    }
+    .bigTitle{ font-size:26px; font-weight:1000; margin:0 0 4px; letter-spacing:.3px; }
+    .sub{ margin:0; color: var(--muted); font-size: 14px; }
+    .buttons{ display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; margin-top: 14px; }
+
+    button{
+      all:unset;
+      cursor:pointer;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: linear-gradient(180deg, rgba(122,167,255,.18), rgba(122,167,255,.05));
+      box-shadow: 0 16px 40px rgba(0,0,0,.45);
+      font-weight: 1000;
+      letter-spacing:.3px;
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      color: var(--text);
+      pointer-events:auto;
+    }
+    button.secondary{
+      background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.03));
+      font-weight: 900;
+      color: var(--muted);
+    }
+    button:active{ transform: translateY(1px); }
+    .hidden{ display:none !important; }
+
+    details{
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 16px;
+      background: rgba(0,0,0,.18);
+      padding: 10px 12px;
+    }
+    details > summary{
+      cursor:pointer;
+      font-weight: 1000;
+      color: var(--text);
+      list-style:none;
+      outline:none;
+    }
+    details > summary::-webkit-details-marker { display:none; }
+
+    .devGrid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+      margin-top:10px;
+    }
+    @media (max-width: 760px){ .devGrid{ grid-template-columns: 1fr; } }
+
+    .devRow{
+      display:grid;
+      grid-template-columns: 1fr 160px;
+      gap:10px;
+      align-items:center;
+      margin-top:8px;
+    }
+    .devRow input[type="number"]{ width: 160px; }
+    .devNote{ color: var(--muted); font-size:12px; margin-top:8px; line-height:1.35; }
+  </style>
+</head>
+
+<body>
+  <canvas id="game"></canvas>
+
+  <div class="hud">
+    <div class="top">
+      <div class="panel">
+        <div class="row">
+          <div>
+            <div class="title">You <span class="tiny" id="p1HpText"></span></div>
+            <div class="meter"><div class="fill p1" id="p1HpFill"></div></div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <div style="min-width:72px" class="tiny">Mana</div>
+          <div class="meter" style="height:9px; flex:1">
+            <div class="fill manaFill" id="p1ManaFill" style="width:100%"></div>
+          </div>
+          <div class="title" id="p1ManaText" style="min-width:92px; text-align:right">10000</div>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <div class="tiny">Shifts</div>
+          <div class="title" id="p1DashText">4/4</div>
+          <div class="tiny">Molotov</div>
+          <div class="title" id="p1MoloText">Ready</div>
+          <div class="tiny">Knives</div>
+          <div class="title" id="p1KnifeText">Ready</div>
+          <div class="tiny">Grenade</div>
+          <div class="title" id="p1GrenText">Ready</div>
+          <div class="tiny">Ball</div>
+          <div class="title" id="p1BallText">Ready</div>
+          <div class="tiny">Sniper</div>
+          <div class="title" id="p1SniperText">Ready</div>
+          <div class="tiny">Block</div>
+          <div class="title" id="p1BlockText">Ready</div>
+          <div class="tiny">Time</div>
+          <div class="title" id="p1TimeText">Ready</div>
+          <div class="tiny">Flag</div>
+          <div class="title" id="p1FlagText">—</div>
+        </div>
+      </div>
+
+      <div class="panel" style="text-align:right">
+        <div>
+          <div class="title">CPU <span class="tiny" id="p2HpText"></span></div>
+          <div class="meter"><div class="fill p2" id="p2HpFill"></div></div>
+        </div>
+
+        <div class="row" style="margin-top:10px; justify-content:flex-end;">
+          <div style="min-width:72px" class="tiny">Mana</div>
+          <div class="meter" style="height:9px; flex:1; max-width: 260px">
+            <div class="fill manaFill" id="p2ManaFill" style="width:100%"></div>
+          </div>
+          <div class="title" id="p2ManaText" style="min-width:92px; text-align:right">10000</div>
+        </div>
+
+        <div class="row" style="margin-top:10px; justify-content:flex-end;">
+          <div class="tiny">Difficulty</div>
+          <div class="title" id="diffText">Medium</div>
+          <div class="tiny">Flag</div>
+          <div class="title" id="p2FlagText">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottomBar">
+      <div class="controlsPanel">
+        <div class="row" style="align-items:flex-start">
+          <div>
+            <div class="title">Spell Tuning</div>
+            <div class="tiny">
+              <b>Left click</b> = Attack (uses mana) ·
+              <b>E</b> = Bouncing Ball (hold) ·
+              <b>F</b> = Sniper Line ·
+              <b>Ctrl</b> = Block (hold) ·
+              <b>R</b> = Time Damage Buff ·
+              <b>U</b> = Toggle Size Boost ·
+              <b>Right click</b> = Molotov ·
+              <b>Space</b> = Knife Burst ·
+              <b>G</b> = Grenade ·
+              <b>1–6</b> = Set fire-rate ·
+              <b>L/Z/X/C/V/B/N/M</b> = Set projectile speed ·
+              WASD move · Shift dash (move direction)
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div class="tiny">Your Attack DPS (final)</div>
+            <div class="title" id="dpsReadout">—</div>
+          </div>
+        </div>
+
+        <div class="grid" style="margin-top:10px">
+          <div class="group">
+            <label>Fire Rate (shots/sec) — 1 to 1000 (exponential slider)</label>
+            <div class="slRow">
+              <input id="rateSlider" type="range" min="0" max="1000" value="500" step="1">
+              <input id="rateInput" type="number" min="1" max="1000" step="1" value="50" inputmode="numeric">
+            </div>
+            <div class="tiny" id="rateHint"></div>
+            <div class="tiny" style="margin-top:6px; opacity:.8">Type and press <b>Enter</b> to confirm.</div>
+          </div>
+
+          <div class="group">
+            <label>Projectile Speed (px/sec) — 1 to 20000 (exponential slider)</label>
+            <div class="slRow">
+              <input id="speedSlider" type="range" min="0" max="1000" value="700" step="1">
+              <input id="speedInput" type="number" min="1" max="20000" value="2000" inputmode="numeric">
+            </div>
+            <div class="tiny" id="speedHint"></div>
+            <div class="tiny" style="margin-top:6px; opacity:.8">Type and press <b>Enter</b> to confirm.</div>
+          </div>
+
+          <div class="group">
+            <label>DPS Multiplier — x1.00 to x2.00</label>
+            <div class="slRow">
+              <input id="multSlider" type="range" min="1" max="2" value="1" step="0.01">
+              <input id="multInput" type="number" min="1" max="2" value="1" step="0.01" inputmode="decimal">
+            </div>
+            <div class="tiny" id="multHint"></div>
+            <div class="tiny" style="margin-top:6px; opacity:.8">Type and press <b>Enter</b> to confirm multiplier.</div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px; align-items:flex-end">
+          <div>
+            <span class="pill"><span class="dot good"></span>Attack: <b style="color:var(--text)">Left Click</b></span>
+            <span class="pill"><span class="dot orange"></span>Ball: <b style="color:var(--text)">E Hold</b></span>
+            <span class="pill"><span class="dot"></span>Sniper: <b style="color:var(--text)">F</b></span>
+            <span class="pill"><span class="dot"></span>Block: <b style="color:var(--text)">Ctrl Hold</b></span>
+            <span class="pill"><span class="dot"></span>Time: <b style="color:var(--text)">R</b></span>
+            <span class="pill"><span class="dot"></span>Size Boost: <b style="color:var(--text)">U</b></span>
+            <span class="pill"><span class="dot warn"></span>Molotov: <b style="color:var(--text)">Right Click</b></span>
+            <span class="pill"><span class="dot bad"></span>Knives: <b style="color:var(--text)">Space</b></span>
+            <span class="pill"><span class="dot"></span>Grenade: <b style="color:var(--text)">G</b></span>
+            <span class="pill"><span class="dot"></span>Dash: <b style="color:var(--text)">Shift</b></span>
+            <span class="pill"><span class="dot"></span>Rates: <b style="color:var(--text)">1–6</b></span>
+            <span class="pill"><span class="dot"></span>Speed: <b style="color:var(--text)">L/Z/X/C/V/B/N/M</b></span>
+          </div>
+
+          <div style="display:flex; gap:10px; align-items:center; pointer-events:auto">
+            <label style="margin:0">
+              <span class="tiny">Difficulty</span><br>
+              <select id="difficultySel">
+                <option value="easy">Easy</option>
+                <option value="medium" selected>Medium</option>
+                <option value="hard">Hard</option>
+                <option value="extreme">Extremely Hard</option>
+              </select>
+            </label>
+            <button class="secondary" id="resetBtn">Reset</button>
+          </div>
+        </div>
+
+        <div class="hint" id="formulaHint"></div>
+      </div>
+
+      <div class="panel rightPanel">
+        <div class="title">Mana Rules</div>
+        <div class="tiny" style="margin-top:6px">
+          Regen delay happens after you STOP spending mana (default 0.4s).
+        </div>
+        <div class="tiny" style="margin-top:6px">
+          Attack allowed while mana &gt; 10. Molotov + Grenade use no mana.
+        </div>
+        <div class="tiny" style="margin-top:6px">
+          Ball spell uses the same per-shot mana cost as a normal shot and can be held.
+        </div>
+        <div class="tiny" style="margin-top:6px">
+          Sniper uses a flat mana cost and hits anything in the beam line for fixed damage.
+        </div>
+        <div class="tiny" style="margin-top:6px">
+          High-speed projectiles can also use an invisible delayed line-hitbox.
+        </div>
+        <div class="tiny" style="margin-top:6px">
+          Size boost activates above the chosen speed threshold and can be toggled with U.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="menu">
+    <div class="card">
+      <div class="cardHeader">
+        <div>
+          <h1 class="bigTitle">NEON BABO DUEL</h1>
+          <p class="sub">Walls + tuned attack + mana + Molotov burn + Knife burst + Grenades + Bouncing Ball spell + Sniper line.</p>
+        </div>
+        <div style="text-align:right">
+          <div class="tiny">Goal</div>
+          <div class="title">Reduce CPU to 0 HP</div>
+        </div>
+      </div>
+
+      <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="group">
+          <div class="title">Controls</div>
+          <div class="tiny" style="margin-top:8px; line-height:1.45">
+            <b>WASD / Arrow keys</b> move<br>
+            <b>Shift</b> dash in movement direction<br>
+            <b>Ctrl</b> block (hold; uses mana; cannot shoot while blocking)<br>
+            <b>Left click</b> Attack (uses mana; bullets persist until wall hit)<br>
+            <b>E</b> Bouncing Ball (hold; uses mana; same fire rate as normal shots)<br>
+            <b>F</b> Sniper line (flat mana cost; beam damage)<br>
+            <b>R</b> Time damage buff (extra damage applied over time)<br>
+            <b>U</b> Toggle projectile size boost<br>
+            <b>Right click</b> Molotov (burn; cooldown)<br>
+            <b>Space</b> Knife Burst (pop/retract; cooldown; high damage if close)<br>
+            <b>G</b> Grenade (lands where your mouse points; splash damage; cooldown)<br>
+            <b>T</b> Teleport<br>
+            <b>1,2,3,4,5,6</b> set fire-rate presets<br>
+            <b>L/Z/X/C/V/B/N/M</b> set projectile speed presets
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="title">Start</div>
+          <div class="buttons">
+            <button class="secondary" id="howBtn">Show Spell Math</button>
+            <button id="startBtn">Start Match</button>
+          </div>
+          <div class="hint">Developer menu below controls everything before match start.</div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px">
+        <details id="devDetails" open>
+          <summary>Developer Menu (Pre-game only)</summary>
+
+          <div class="devGrid">
+            <div class="group">
+              <div class="title">Player (You)</div>
+
+              <div class="devRow"><label>HP Max</label><input id="dev_p1_hpmax" type="number" min="1" step="1" value="30000"></div>
+              <div class="devRow"><label>Mana Max</label><input id="dev_p1_manamax" type="number" min="0" step="1" value="10000"></div>
+              <div class="devRow"><label>Mana Regen /s</label><input id="dev_p1_regen" type="number" min="0" step="1" value="1500"></div>
+              <div class="devRow"><label>Regen Delay After Spend (s)</label><input id="dev_regen_delay" type="number" min="0" step="0.05" value="0.4"></div>
+
+              <div class="title" style="margin-top:10px">Mana Drain Curve (by DPS Mult)</div>
+              <div class="devRow"><label>Drain at x1 (per sec)</label><input id="dev_drain_x1" type="number" min="0" step="10" value="2000"></div>
+              <div class="devRow"><label>Drain at x2 (per sec)</label><input id="dev_drain_x2" type="number" min="0" step="10" value="7000"></div>
+
+              <div class="devRow"><label>Fire Rate</label><input id="dev_p1_rate" type="number" min="1" max="1000" step="1" value="50"></div>
+              <div class="devRow"><label>Projectile Speed</label><input id="dev_p1_speed" type="number" min="1" max="20000" step="1" value="2000"></div>
+              <div class="devRow"><label>DPS Mult (x1–x2)</label><input id="dev_p1_mult" type="number" min="1" max="2" step="0.01" value="1"></div>
+
+              <div class="title" style="margin-top:10px">Projectile Damage by Speed Scale</div>
+              <div class="devRow"><label>Scale @ Speed 1 (px/s)</label><input id="dev_dmg_scale_spd1" type="number" min="1" step="1" value="700"></div>
+              <div class="devRow"><label>Damage Scale 1</label><input id="dev_dmg_scale_val1" type="number" min="0" step="0.01" value="1"></div>
+              <div class="devRow"><label>Scale @ Speed 2 (px/s)</label><input id="dev_dmg_scale_spd2" type="number" min="1" step="1" value="1600"></div>
+              <div class="devRow"><label>Damage Scale 2</label><input id="dev_dmg_scale_val2" type="number" min="0" step="0.01" value="1"></div>
+              <div class="devRow"><label>Scale @ Speed 3 (px/s)</label><input id="dev_dmg_scale_spd3" type="number" min="1" step="1" value="3000"></div>
+              <div class="devRow"><label>Damage Scale 3</label><input id="dev_dmg_scale_val3" type="number" min="0" step="0.01" value="1"></div>
+              <div class="devRow"><label>Scale @ Speed 4 (px/s)</label><input id="dev_dmg_scale_spd4" type="number" min="1" step="1" value="20000"></div>
+              <div class="devRow"><label>Damage Scale 4</label><input id="dev_dmg_scale_val4" type="number" min="0" step="0.01" value="1"></div>
+
+              <div class="title" style="margin-top:10px">High-Speed Line Hitbox</div>
+              <div class="devRow"><label>Starts At Speed (px/s)</label><input id="dev_line_hitbox_start_speed" type="number" min="1" step="1" value="2000"></div>
+              <div class="devRow"><label>Mode (1=Variable, 2=Straight)</label><input id="dev_line_hitbox_mode" type="number" min="1" max="2" step="1" value="1"></div>
+              <div class="devRow"><label>Straight Delay Factor</label><input id="dev_line_hitbox_straight_factor" type="number" min="1" step="1" value="750"></div>
+              <div class="devRow"><label>Smoother (s)</label><input id="dev_line_hitbox_smoother" type="number" min="0.001" step="0.001" value="0.005"></div>
+              <div class="devRow"><label>Range 0–300 Multiplier</label><input id="dev_line_hitbox_mul_1" type="number" min="0" step="0.1" value="3"></div>
+              <div class="devRow"><label>Range 301–600 Multiplier</label><input id="dev_line_hitbox_mul_2" type="number" min="0" step="0.1" value="6"></div>
+              <div class="devRow"><label>Range 601+ Multiplier</label><input id="dev_line_hitbox_mul_3" type="number" min="0" step="0.1" value="10"></div>
+              <div class="devRow"><label>Range 0–300 Max Length (px)</label><input id="dev_line_hitbox_len_1" type="number" min="1" step="1" value="300"></div>
+              <div class="devRow"><label>Range 301–600 Max Length (px)</label><input id="dev_line_hitbox_len_2" type="number" min="1" step="1" value="600"></div>
+
+              <div class="title" style="margin-top:10px">Block (Ctrl Hold)</div>
+              <div class="devRow"><label>Start Mana Cost</label><input id="dev_block_start_cost" type="number" min="0" step="1" value="5000"></div>
+              <div class="devRow"><label>Drain /s</label><input id="dev_block_drain" type="number" min="0" step="1" value="4000"></div>
+              <div class="devRow"><label>Max Duration (s)</label><input id="dev_block_duration" type="number" min="0.1" step="0.1" value="1"></div>
+
+              <div class="title" style="margin-top:10px">Time Damage (R)</div>
+              <div class="devRow"><label>Damage Multiplier</label><input id="dev_time_mult" type="number" min="1" step="0.01" value="1.2"></div>
+              <div class="devRow"><label>Duration (s)</label><input id="dev_time_duration" type="number" min="0.1" step="0.1" value="10"></div>
+
+              <div class="title" style="margin-top:10px">Projectile Size Boost</div>
+              <div class="devRow"><label>Default On (0/1)</label><input id="dev_size_boost_default" type="number" min="0" max="1" step="1" value="1"></div>
+              <div class="devRow"><label>Starts After Speed (px/s)</label><input id="dev_size_boost_threshold" type="number" min="1" step="1" value="1800"></div>
+              <div class="devRow"><label>Reference Speed For Size</label><input id="dev_size_boost_ref_speed" type="number" min="1" step="1" value="1600"></div>
+              <div class="devRow"><label>Radius Scale</label><input id="dev_size_boost_scale" type="number" min="0.1" step="0.05" value="1"></div>
+              <div class="devRow"><label>Mana Multiplier</label><input id="dev_size_boost_mana_mult" type="number" min="1" step="0.01" value="1.3"></div>
+
+              <div class="title" style="margin-top:10px">Capture The Flag</div>
+              <div class="devRow"><label>Mode (0=Off, 1=On)</label><input id="dev_ctf_enabled" type="number" min="0" max="1" step="1" value="0"></div>
+              <div class="devRow"><label>Pickup Radius (px)</label><input id="dev_ctf_pickup_radius" type="number" min="1" step="1" value="36"></div>
+              <div class="devRow"><label>Base Radius (px)</label><input id="dev_ctf_base_radius" type="number" min="1" step="1" value="70"></div>
+              <div class="devRow"><label>Drop Pickup Cooldown (s)</label><input id="dev_ctf_pickup_cd" type="number" min="0" step="0.1" value="10"></div>
+
+              <div class="title" style="margin-top:10px">Bouncing Ball Spell (E)</div>
+              <div class="devRow"><label>DPS Factor (x)</label><input id="dev_ball_factor" type="number" min="0" max="2" step="0.01" value="0.2"></div>
+              <div class="devRow"><label>Lifetime (s)</label><input id="dev_ball_life" type="number" min="0.1" max="60" step="0.1" value="10"></div>
+
+              <div class="title" style="margin-top:10px">Sniper (F)</div>
+              <div class="devRow"><label>Mana Cost</label><input id="dev_sniper_cost" type="number" min="0" step="1" value="8000"></div>
+              <div class="devRow"><label>Damage</label><input id="dev_sniper_dmg" type="number" min="0" step="1" value="500"></div>
+
+              <div class="title" style="margin-top:10px">Molotov (Right Click)</div>
+              <div class="devRow"><label>Cooldown (s)</label><input id="dev_molo_cd" type="number" min="0" step="0.1" value="10"></div>
+              <div class="devRow"><label>Speed (px/s)</label><input id="dev_molo_spd" type="number" min="1" step="1" value="500"></div>
+              <div class="devRow"><label>Burn DPS</label><input id="dev_molo_dps" type="number" min="0" step="1" value="150"></div>
+
+              <div class="title" style="margin-top:10px">Knife Burst (Space)</div>
+              <div class="devRow"><label>Cooldown (s)</label><input id="dev_knife_cd" type="number" min="0" step="0.1" value="10"></div>
+              <div class="devRow"><label>Trigger Distance (px)</label><input id="dev_knife_dist" type="number" min="1" step="1" value="58"></div>
+              <div class="devRow"><label>Damage (single burst)</label><input id="dev_knife_dmg" type="number" min="0" step="1" value="2000"></div>
+
+              <div class="title" style="margin-top:10px">Grenade (G)</div>
+              <div class="devRow"><label>Cooldown (s)</label><input id="dev_gren_cd" type="number" min="0" step="0.1" value="15"></div>
+              <div class="devRow"><label>Speed (px/s)</label><input id="dev_gren_spd" type="number" min="1" step="1" value="300"></div>
+              <div class="devRow"><label>Damage</label><input id="dev_gren_dmg" type="number" min="0" step="1" value="1500"></div>
+              <div class="devRow"><label>Damage Radius (px)</label><input id="dev_gren_rad" type="number" min="1" step="1" value="140"></div>
+
+              <div class="title" style="margin-top:10px">Teleport (T)</div>
+              <div class="devRow"><label>Teleport Time (s)</label><input id="dev_tp_time" type="number" min="0" step="0.05" value="1"></div>
+
+              <div class="title" style="margin-top:10px">Slider Curve</div>
+              <div class="devRow"><label>Exponential Mix (0–1)</label><input id="dev_curve_mix" type="number" min="0" max="1" step="0.01" value="0.97"></div>
+              <div class="devRow"><label>Exponent Strength</label><input id="dev_curve_exp" type="number" min="0.2" max="8" step="0.05" value="1.5"></div>
+
+              <div class="devRow"><label>Dash Charges</label><input id="dev_p1_dashmax" type="number" min="0" step="1" value="4"></div>
+              <div class="devRow"><label>Dash Recharge (s)</label><input id="dev_p1_dashrt" type="number" min="0.1" step="0.1" value="2.1"></div>
+            </div>
+
+            <div class="group">
+              <div class="title">CPU</div>
+
+              <div class="devRow"><label>HP Max</label><input id="dev_cpu_hpmax" type="number" min="1" step="1" value="30000"></div>
+              <div class="devRow"><label>Mana Max</label><input id="dev_cpu_manamax" type="number" min="0" step="1" value="10000"></div>
+              <div class="devRow"><label>Mana Regen /s</label><input id="dev_cpu_regen" type="number" min="0" step="1" value="1500"></div>
+
+              <div class="devRow"><label>Fire Rate</label><input id="dev_cpu_rate" type="number" min="1" max="1000" step="1" value="120"></div>
+              <div class="devRow"><label>Projectile Speed</label><input id="dev_cpu_speed" type="number" min="1" max="20000" step="1" value="7000"></div>
+              <div class="devRow"><label>DPS Mult (x1–x2)</label><input id="dev_cpu_mult" type="number" min="1" max="2" step="0.01" value="1"></div>
+
+              <div class="devRow"><label>Dash Charges</label><input id="dev_cpu_dashmax" type="number" min="0" step="1" value="4"></div>
+              <div class="devRow"><label>Dash Recharge (s)</label><input id="dev_cpu_dashrt" type="number" min="0.1" step="0.1" value="2.1"></div>
+
+              <div class="devNote">CPU does not use the Ball spell or Sniper by default.</div>
+            </div>
+          </div>
+
+          <div class="buttons" style="margin-top:12px; justify-content:flex-start">
+            <button class="secondary" id="devApplyBtn">Apply Dev Settings</button>
+            <button class="secondary" id="devDefaultsBtn">Restore Defaults</button>
+          </div>
+
+          <div class="devNote">
+            - Typed values in the bottom panel apply only on Enter.<br>
+            - Ball spell uses per-shot mana equal to one normal shot worth of mana-drain and can be held.<br>
+            - Block is a hold feature and prevents shooting while active.<br>
+            - Time damage adds extra damage over time using the configured multiplier and duration.<br>
+            - Size boost can enlarge projectiles at high speed and increase mana usage.
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  "use strict";
+
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const lerp=(a,b,t)=>a+(b-a)*t;
+  const TAU=Math.PI*2;
+  const rand=(a=1,b=0)=>Math.random()*(a-b)+b;
+  const dist=(ax,ay,bx,by)=>Math.hypot(ax-bx, ay-by);
+  const angleTo=(ax,ay,bx,by)=>Math.atan2(by-ay, bx-ax);
+
+  function fmt(n){
+    if(n>=1e9) return (n/1e9).toFixed(2)+"B";
+    if(n>=1e6) return (n/1e6).toFixed(2)+"M";
+    if(n>=1e3) return (n/1e3).toFixed(1)+"k";
+    return String(Math.floor(n));
+  }
+  function lerpAngle(a,b,t){
+    const da = ((b - a + Math.PI) % (TAU)) - Math.PI;
+    return a + da * clamp(t,0,1);
+  }
+
+  const canvas=document.getElementById("game");
+  const ctx=canvas.getContext("2d",{alpha:false});
+  let W=0,H=0,DPR=1;
+
+  function resize(){
+    DPR=Math.min(2,window.devicePixelRatio||1);
+    W=Math.floor(window.innerWidth);
+    H=Math.floor(window.innerHeight);
+    canvas.width=Math.floor(W*DPR);
+    canvas.height=Math.floor(H*DPR);
+    canvas.style.width=W+"px";
+    canvas.style.height=H+"px";
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener("resize",resize,{passive:true});
+  resize();
+
+  function gameplayViewport(){
+    const uiH=parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--uiHeight"))||280;
+    return { w: W, h: Math.max(240, H - uiH) };
+  }
+
+  const el=(id)=>document.getElementById(id);
+  const menu=el("menu");
+
+  const p1HpFill=el("p1HpFill"), p2HpFill=el("p2HpFill");
+  const p1HpText=el("p1HpText"), p2HpText=el("p2HpText");
+  const p1DashText=el("p1DashText"), p1MoloText=el("p1MoloText"), p1KnifeText=el("p1KnifeText"), p1GrenText=el("p1GrenText"), p1BallText=el("p1BallText"), p1SniperText=el("p1SniperText");
+  const p1BlockText=el("p1BlockText"), p1TimeText=el("p1TimeText");
+  const p1FlagText=el("p1FlagText"), p2FlagText=el("p2FlagText");
+  const p1ManaFill=el("p1ManaFill"), p1ManaText=el("p1ManaText");
+  const p2ManaFill=el("p2ManaFill"), p2ManaText=el("p2ManaText");
+  const diffText=el("diffText");
+
+  const rateSlider=el("rateSlider"), rateInput=el("rateInput");
+  const speedSlider=el("speedSlider"), speedInput=el("speedInput");
+  const multSlider=el("multSlider"), multInput=el("multInput");
+  const rateHint=el("rateHint"), speedHint=el("speedHint"), multHint=el("multHint");
+  const dpsReadout=el("dpsReadout"), formulaHint=el("formulaHint");
+  const difficultySel=el("difficultySel");
+
+  el("startBtn").onclick=()=>startMatch();
+  el("resetBtn").onclick=()=>resetMatch(true);
+
+  el("howBtn").onclick=()=>alert(
+`Attack (Left Click):
+- Drains mana continuously (based on DPS multiplier curve).
+- Bullets NEVER disappear mid-air; they end only on wall hit.
+- At high speeds, projectiles can also use a delayed invisible line-hitbox.
+
+Ball Spell (E):
+- Hold to keep firing basketball projectiles.
+- Uses the same fire rate as normal shots.
+- Uses the same per-shot mana as a normal shot.
+- Deals AttackDamagePerShot * BallFactor (default 0.2).
+
+Block (Ctrl):
+- Hold to block.
+- Consumes start cost + drain over time.
+- You cannot shoot while blocking.
+
+Time Damage (R):
+- Activates a timed buff.
+- Your hits keep normal damage and apply extra delayed damage over the configured duration.`
+  );
+
+  const keys=new Set();
+  const flags={
+    shiftEdge:false, spaceEdge:false, rmbEdge:false, gEdge:false, eEdge:false, tEdge:false, qEdge:false, rEdge:false,
+    oneEdge:false, twoEdge:false, threeEdge:false, fourEdge:false, fiveEdge:false, sixEdge:false,
+    fEdge:false, lEdge:false, zEdge:false, xEdge:false, cEdge:false, vEdge:false, bEdge:false, nEdge:false, mEdge:false,
+    uEdge:false
+  };
+  let mouseX=W/2, mouseY=H/2;
+  let lmb=false, rmb=false;
+
+  window.addEventListener("keydown",(e)=>{
+    if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
+    keys.add(e.key.toLowerCase());
+  },{passive:false});
+  window.addEventListener("keyup",(e)=>keys.delete(e.key.toLowerCase()),{passive:true});
+  window.addEventListener("mousemove",(e)=>{ mouseX=e.clientX; mouseY=e.clientY; },{passive:true});
+  window.addEventListener("mousedown",(e)=>{ if(e.button===0) lmb=true; if(e.button===2) rmb=true; },{passive:true});
+  window.addEventListener("mouseup",(e)=>{ if(e.button===0) lmb=false; if(e.button===2) rmb=false; },{passive:true});
+  canvas.addEventListener("contextmenu",(e)=>e.preventDefault());
+
+  function baseDpsFromRate(rate){
+    rate=clamp(rate,1,1000);
+    const p=[{x:1,y:1000},{x:10,y:900},{x:100,y:750},{x:1000,y:550}];
+    for(let i=0;i<p.length-1;i++){
+      const a=p[i], b=p[i+1];
+      if(rate>=a.x && rate<=b.x) return lerp(a.y,b.y,(rate-a.x)/(b.x-a.x));
+    }
+    return 550;
+  }
+  function speedMultiplier(speed){
+    speed=clamp(speed,1,20000);
+    const p=[{x:1,y:5.5},{x:2,y:5.0},{x:20,y:4.0},{x:200,y:3.0},{x:2000,y:2.0},{x:20000,y:1.0}];
+    for(let i=0;i<p.length-1;i++){
+      const a=p[i], b=p[i+1];
+      if(speed>=a.x && speed<=b.x) return lerp(a.y,b.y,(speed-a.x)/(b.x-a.x));
+    }
+    return 1;
+  }
+  function totalAttackDps(rate,speed){ return baseDpsFromRate(rate)*speedMultiplier(speed); }
+  function projectileRadiusFromSpeed(speed){
+    const t=1-(clamp(speed,1,20000)-1)/(20000-1);
+    const m=speedMultiplier(speed);
+    return 4 + t*16 + (m-1)*1.2;
+  }
+
+  const Drain={ x1:2000, x2:7000 };
+  function manaDrainPerSecond(mult){
+    mult=clamp(mult,1,2);
+    return lerp(Drain.x1, Drain.x2, mult-1);
+  }
+  function manaCostPerShot(mult, rate){
+    rate = clamp(rate,1,1000);
+    return manaDrainPerSecond(mult) / rate;
+  }
+
+  const curve={ mix:0.97, exp:1.5 };
+  function expMap(pos0to1000,min,max){
+    const t=clamp(pos0to1000/1000,0,1);
+    const lin=lerp(min,max,t);
+    const shaped=Math.pow(t,curve.exp);
+    const expv=min*Math.pow(max/min,shaped);
+    return lerp(lin,expv,curve.mix);
+  }
+  function invExpMap(value,min,max){
+    value=clamp(value,min,max);
+    const tLin=(value-min)/(max-min);
+    const tExp=Math.log(value/min)/Math.log(max/min);
+    const tExpInv=Math.pow(clamp(tExp,0,1),1/curve.exp);
+    return Math.round(clamp(lerp(tLin,tExpInv,curve.mix),0,1)*1000);
+  }
+
+  const arena={ w:2200, h:1400 };
+  const walls=[
+    {x:1020,y:580,w:160,h:240},
+    {x:520,y:240,w:240,h:140},
+    {x:1440,y:240,w:240,h:140},
+    {x:520,y:1020,w:240,h:140},
+    {x:1440,y:1020,w:240,h:140},
+    {x:240,y:520,w:140,h:360},
+    {x:1820,y:520,w:140,h:360},
+    {x:860,y:360,w:120,h:120},
+    {x:1220,y:360,w:120,h:120},
+    {x:860,y:920,w:120,h:120},
+    {x:1220,y:920,w:120,h:120},
+    {x:760,y:640,w:70,h:120},
+    {x:1370,y:640,w:70,h:120},
+  ];
+
+  const bullets=[];
+  const balls=[];
+  const molotovs=[];
+  const grenades=[];
+  const particles=[];
+  const knifeBursts=[];
+  const sniperBeams=[];
+
+  const RATE_PRESETS={
+    "1":1,
+    "2":4,
+    "3":11,
+    "4":30,
+    "5":120,
+    "6":1000
+  };
+
+  const SPEED_PRESETS={
+    "l":1,
+    "z":200,
+    "x":400,
+    "c":700,
+    "v":1600,
+    "b":3500,
+    "n":8000,
+    "m":20000
+  };
+
+  const damageSpeedScaleProfile={
+    points:[
+      {speed:700, scale:1},
+      {speed:1600, scale:1},
+      {speed:3000, scale:1},
+      {speed:20000, scale:1}
+    ]
+  };
+
+  const lineHitboxCfg={
+    startSpeed:2000,
+    mode:1,
+    straightFactor:750,
+    smoother:0.005,
+    mul1:3,
+    mul2:6,
+    mul3:10,
+    len1:300,
+    len2:600
+  };
+
+  const ctfCfg={
+    enabled:false,
+    pickupRadius:36,
+    baseRadius:70,
+    pickupCooldown:10
+  };
+
+  const bases={
+    p1:{ x:150, y:arena.h/2 },
+    cpu:{ x:arena.w-150, y:arena.h/2 }
+  };
+
+  function makeFlag(team){
+    const base=bases[team];
+    return {
+      team,
+      x:base.x,
+      y:base.y,
+      homeX:base.x,
+      homeY:base.y,
+      carrier:null,
+      dropped:false,
+      cooldowns:{ p1:0, cpu:0 }
+    };
+  }
+
+  const flagsState={
+    p1:makeFlag("p1"),
+    cpu:makeFlag("cpu")
+  };
+
+  function otherTeam(team){ return team==="p1" ? "cpu" : "p1"; }
+  function teamPlayer(team){ return team==="p1" ? p1 : cpu; }
+
+  function resetFlagHome(team){
+    const flag=flagsState[team];
+    flag.x=flag.homeX;
+    flag.y=flag.homeY;
+    flag.carrier=null;
+    flag.dropped=false;
+  }
+
+  function pickupFlag(carrierTeam, flagTeam){
+    const flag=flagsState[flagTeam];
+    flag.carrier=carrierTeam;
+    flag.dropped=false;
+  }
+
+  function dropCarriedFlag(carrierTeam){
+    for(const team of ["p1","cpu"]){
+      const flag=flagsState[team];
+      if(flag.carrier===carrierTeam){
+        const pl=teamPlayer(carrierTeam);
+        flag.carrier=null;
+        flag.dropped=true;
+        flag.x=pl.x;
+        flag.y=pl.y;
+        flag.cooldowns[carrierTeam]=ctfCfg.pickupCooldown;
+      }
+    }
+  }
+
+  function updateFlagCooldowns(dt){
+    for(const team of ["p1","cpu"]){
+      const flag=flagsState[team];
+      flag.cooldowns.p1=Math.max(0,flag.cooldowns.p1-dt);
+      flag.cooldowns.cpu=Math.max(0,flag.cooldowns.cpu-dt);
+    }
+  }
+
+  function updateFlags(dt){
+    if(!ctfCfg.enabled) return;
+
+    updateFlagCooldowns(dt);
+
+    for(const team of ["p1","cpu"]){
+      const flag=flagsState[team];
+      if(flag.carrier){
+        const pl=teamPlayer(flag.carrier);
+        flag.x=pl.x;
+        flag.y=pl.y;
+      }
+    }
+
+    for(const team of ["p1","cpu"]){
+      const flag=flagsState[team];
+      const ownerTeam=team;
+      const enemyTeam=otherTeam(team);
+      const owner=teamPlayer(ownerTeam);
+      const enemy=teamPlayer(enemyTeam);
+
+      if(flag.carrier) continue;
+
+      if(flag.dropped && owner.alive && dist(owner.x,owner.y,flag.x,flag.y) <= owner.r + ctfCfg.pickupRadius){
+        resetFlagHome(team);
+        continue;
+      }
+
+      if(enemy.alive && flag.cooldowns[enemyTeam] <= 0 && dist(enemy.x,enemy.y,flag.x,flag.y) <= enemy.r + ctfCfg.pickupRadius){
+        pickupFlag(enemyTeam, team);
+      }
+    }
+
+    for(const carrierTeam of ["p1","cpu"]){
+      const enemyFlag=flagsState[otherTeam(carrierTeam)];
+      if(enemyFlag.carrier!==carrierTeam) continue;
+
+      const base=bases[carrierTeam];
+      const pl=teamPlayer(carrierTeam);
+      if(pl.alive && dist(pl.x,pl.y,base.x,base.y) <= ctfCfg.baseRadius){
+        running=false;
+        setTimeout(()=>{
+          alert(carrierTeam==="p1" ? "You captured the flag and won!" : "CPU captured your flag and won!");
+          menu.classList.remove("hidden");
+          resetMatch(true);
+        },10);
+        return;
+      }
+    }
+  }
+
+  function damageScaleFromSpeed(speed){
+    const pts=[...damageSpeedScaleProfile.points]
+      .map(p=>({ speed:clamp(Number(p.speed)||1,1,20000), scale:Math.max(0, Number(p.scale)||0) }))
+      .sort((a,b)=>a.speed-b.speed);
+
+    if(speed<=pts[0].speed) return pts[0].scale;
+    for(let i=0;i<pts.length-1;i++){
+      const a=pts[i], b=pts[i+1];
+      if(speed>=a.speed && speed<=b.speed){
+        const t=(speed-a.speed)/Math.max(1e-9,(b.speed-a.speed));
+        return lerp(a.scale,b.scale,t);
+      }
+    }
+    return pts[pts.length-1].scale;
+  }
+
+  const DEFAULTS={
+    hpMax:3000,
+    manaMax:10000,
+    manaRegen:1500,
+    regenDelayAfterSpend:0.4,
+    drainX1:2000,
+    drainX2:7000,
+    knifeCd:10,
+    knifeDist:58,
+    knifeDamage:2000,
+    moloCd:10,
+    moloSpeed:500,
+    moloBurnDps:150,
+    moloBurnDuration:5,
+    grenCd:15,
+    grenSpeed:300,
+    grenDamage:1500,
+    grenRadius:140,
+    ballFactor:0.2,
+    ballLife:10,
+    sniperCost:8000,
+    sniperDamage:500,
+    blockStartCost:5000,
+    blockDrain:4000,
+    blockDuration:1,
+    timeMult:1.2,
+    timeDuration:10,
+    sizeBoostDefault:true,
+    sizeBoostThreshold:1800,
+    sizeBoostRefSpeed:1600,
+    sizeBoostScale:1.0,
+    sizeBoostManaMult:1.3,
+    teleportTime:1,
+    dashMax:4,
+    dashRechargeTime:2.1,
+    p1:{ rate:15, speed:1500, dpsMult:1.0 },
+    cpu:{ rate:15, speed:1500, dpsMult:1.0 },
+    damageScalePoints:[
+      {speed:700, scale:1},
+      {speed:1600, scale:1},
+      {speed:3000, scale:1},
+      {speed:20000, scale:1}
+    ],
+    lineHitbox:{
+      startSpeed:2000,
+      mode:1,
+      straightFactor:750,
+      smoother:0.005,
+      mul1:3,
+      mul2:6,
+      mul3:10,
+      len1:300,
+      len2:600
+    },
+    ctf:{
+      enabled:false,
+      pickupRadius:36,
+      baseRadius:70,
+      pickupCooldown:10
+    }
+  };
+
+  const G={
+    knifeCd:DEFAULTS.knifeCd,
+    knifeDist:DEFAULTS.knifeDist,
+    knifeDamage:DEFAULTS.knifeDamage,
+    moloCd:DEFAULTS.moloCd,
+    moloSpeed:DEFAULTS.moloSpeed,
+    moloBurnDps:DEFAULTS.moloBurnDps,
+    moloBurnDuration:DEFAULTS.moloBurnDuration,
+    grenCd:DEFAULTS.grenCd,
+    grenSpeed:DEFAULTS.grenSpeed,
+    grenDamage:DEFAULTS.grenDamage,
+    grenRadius:DEFAULTS.grenRadius,
+    ballFactor:DEFAULTS.ballFactor,
+    ballLife:DEFAULTS.ballLife,
+    sniperCost:DEFAULTS.sniperCost,
+    sniperDamage:DEFAULTS.sniperDamage,
+    blockStartCost:DEFAULTS.blockStartCost,
+    blockDrain:DEFAULTS.blockDrain,
+    blockDuration:DEFAULTS.blockDuration,
+    timeMult:DEFAULTS.timeMult,
+    timeDuration:DEFAULTS.timeDuration,
+    sizeBoostThreshold:DEFAULTS.sizeBoostThreshold,
+    sizeBoostRefSpeed:DEFAULTS.sizeBoostRefSpeed,
+    sizeBoostScale:DEFAULTS.sizeBoostScale,
+    sizeBoostManaMult:DEFAULTS.sizeBoostManaMult,
+    sizeBoostDefault:DEFAULTS.sizeBoostDefault,
+    teleportTime:DEFAULTS.teleportTime
+  };
+
+  function makePlayer(isHuman){
+    return {
+      isHuman,
+      x: isHuman?360:arena.w-360,
+      y: arena.h/2,
+      r: 18,
+      vx:0, vy:0,
+
+      hp: DEFAULTS.hpMax,
+      hpMax: DEFAULTS.hpMax,
+
+      mana: DEFAULTS.manaMax,
+      manaMax: DEFAULTS.manaMax,
+      manaRegen: DEFAULTS.manaRegen,
+
+      regenDelayAfterSpend: DEFAULTS.regenDelayAfterSpend,
+      regenDelayT: 0,
+      wasSpending: false,
+
+      dash: DEFAULTS.dashMax,
+      dashMax: DEFAULTS.dashMax,
+      dashRechargeT: 0,
+      dashRechargeTime: DEFAULTS.dashRechargeTime,
+
+      rate: isHuman?DEFAULTS.p1.rate:DEFAULTS.cpu.rate,
+      speed: isHuman?DEFAULTS.p1.speed:DEFAULTS.cpu.speed,
+      dpsMult: isHuman?DEFAULTS.p1.dpsMult:DEFAULTS.cpu.dpsMult,
+
+      shootCd: 0,
+      aim: 0,
+
+      moloCd: 0,
+      knifeCd: 0,
+      grenCd: 0,
+      ballCd: 0,
+
+      tpT: 0,
+      tpMax: DEFAULTS.teleportTime,
+      tpTx: 0,
+      tpTy: 0,
+
+      blocking:false,
+      blockT:0,
+      blockUnlocked:true,
+
+      timeT:0,
+      sizeBoostEnabled:G.sizeBoostDefault,
+
+      status:{ burnT:0, burnDps:0, timeT:0, timeDps:0 },
+      alive:true,
+
+      ai:{
+        reaction:0.18, aggression:0.52, dodge:0.50, peek:0.55,
+        strafe:0.55, aimNoise:0.08, lastDecision:0,
+        desiredDir:{x:0,y:0}, useMolotov:0.26, useKnives:0.14
+      }
+    };
+  }
+
+  const p1=makePlayer(true);
+  const cpu=makePlayer(false);
+
+  const DIFF={
+    easy:{name:"Easy",reaction:0.26,aggression:0.34,dodge:0.30,peek:0.30,aimNoise:0.12,strafe:0.40,useMolotov:0.14,useKnives:0.10},
+    medium:{name:"Medium",reaction:0.18,aggression:0.52,dodge:0.50,peek:0.55,aimNoise:0.08,strafe:0.55,useMolotov:0.26,useKnives:0.14},
+    hard:{name:"Hard",reaction:0.12,aggression:0.66,dodge:0.70,peek:0.72,aimNoise:0.05,strafe:0.70,useMolotov:0.38,useKnives:0.20},
+    extreme:{name:"Extremely Hard",reaction:0.08,aggression:0.78,dodge:0.90,peek:0.92,aimNoise:0.03,strafe:0.86,useMolotov:0.55,useKnives:0.28}
+  };
+  let diffKey="medium";
+  function applyDifficulty(){
+    const d=DIFF[diffKey]||DIFF.medium;
+    diffText.textContent=d.name;
+    Object.assign(cpu.ai,{
+      reaction:d.reaction, aggression:d.aggression, dodge:d.dodge, peek:d.peek,
+      aimNoise:d.aimNoise, strafe:d.strafe, useMolotov:d.useMolotov, useKnives:d.useKnives
+    });
+  }
+
+  const cam={ x:arena.w/2, y:arena.h/2, shake:0, sx:0, sy:0 };
+  function worldToScreen(x,y){
+    const vp=gameplayViewport();
+    return { x:(x-cam.x)+vp.w/2+cam.sx, y:(y-cam.y)+vp.h/2+cam.sy };
+  }
+  function screenToWorldX(sx){ const vp=gameplayViewport(); return (sx - vp.w/2 - cam.sx) + cam.x; }
+  function screenToWorldY(sy){ const vp=gameplayViewport(); return (sy - vp.h/2 - cam.sy) + cam.y; }
+
+  function circleRectPush(circle, rc){
+    const cx=circle.x, cy=circle.y, r=circle.r;
+    const closestX=clamp(cx, rc.x, rc.x+rc.w);
+    const closestY=clamp(cy, rc.y, rc.y+rc.h);
+    const dx=cx-closestX, dy=cy-closestY;
+    const d2=dx*dx+dy*dy;
+    if(d2<r*r){
+      const d=Math.sqrt(d2)||0.0001;
+      const overlap=r-d;
+      circle.x += (dx/d)*overlap;
+      circle.y += (dy/d)*overlap;
+      circle.vx *= 0.6; circle.vy *= 0.6;
+      return true;
+    }
+    return false;
+  }
+  function keepInArena(pl){
+    pl.x=clamp(pl.x, pl.r, arena.w-pl.r);
+    pl.y=clamp(pl.y, pl.r, arena.h-pl.r);
+  }
+  function resolveWallsForPlayer(pl){
+    keepInArena(pl);
+    for(let pass=0; pass<3; pass++){
+      for(const w of walls) circleRectPush(pl,w);
+      keepInArena(pl);
+    }
+  }
+  function bulletHitsRect(b,w){
+    const cx=clamp(b.x,w.x,w.x+w.w);
+    const cy=clamp(b.y,w.y,w.y+w.h);
+    const dx=b.x-cx, dy=b.y-cy;
+    return (dx*dx+dy*dy) < (b.r*b.r);
+  }
+  function hasLineOfSight(ax,ay,bx,by){
+    const steps=28;
+    for(let i=0;i<=steps;i++){
+      const t=i/steps;
+      const x=lerp(ax,bx,t), y=lerp(ay,by,t);
+      for(const w of walls){
+        if(x>=w.x && x<=w.x+w.w && y>=w.y && y<=w.y+w.h) return false;
+      }
+    }
+    return true;
+  }
+
+  function raycastBeamEnd(x,y,ang,maxLen=5000){
+    const step=8;
+    let px=x, py=y;
+    const dx=Math.cos(ang)*step;
+    const dy=Math.sin(ang)*step;
+    const steps=Math.ceil(maxLen/step);
+
+    for(let i=0;i<steps;i++){
+      px += dx;
+      py += dy;
+
+      if(px<0 || py<0 || px>arena.w || py>arena.h){
+        return { x:clamp(px,0,arena.w), y:clamp(py,0,arena.h), hitWall:true };
+      }
+
+      for(const w of walls){
+        if(px>=w.x && px<=w.x+w.w && py>=w.y && py<=w.y+w.h){
+          return { x:px-dx, y:py-dy, hitWall:true };
+        }
+      }
+    }
+    return { x:px, y:py, hitWall:false };
+  }
+
+  function pointToSegmentDistance(px,py,ax,ay,bx,by){
+    const dx=bx-ax, dy=by-ay;
+    const len2=dx*dx+dy*dy;
+    if(len2<=1e-9) return Math.hypot(px-ax,py-ay);
+    const t=clamp(((px-ax)*dx + (py-ay)*dy)/len2,0,1);
+    const cx=ax+dx*t, cy=ay+dy*t;
+    return Math.hypot(px-cx,py-cy);
+  }
+
+  function lineHitboxMultiplierForDistance(d){
+    if(d<=lineHitboxCfg.len1) return lineHitboxCfg.mul1;
+    if(d<=lineHitboxCfg.len2) return lineHitboxCfg.mul2;
+    return lineHitboxCfg.mul3;
+  }
+
+  function shouldUseLineHitbox(speed){
+    return speed >= lineHitboxCfg.startSpeed;
+  }
+
+  function computeLineHitboxDelay(speed, traveled){
+    if(lineHitboxCfg.mode===2){
+      return Math.max(0, lineHitboxCfg.straightFactor / speed);
+    }
+    const mul=lineHitboxMultiplierForDistance(traveled);
+    const base=(100/speed)*mul;
+    return Math.max(0, base);
+  }
+
+  function computeLineHitboxDuration(speed, traveled){
+    if(lineHitboxCfg.mode===2){
+      return Math.max(0.001, lineHitboxCfg.smoother);
+    }
+    const delay=computeLineHitboxDelay(speed, traveled);
+    return Math.max(0.001, delay + lineHitboxCfg.smoother);
+  }
+
+  function makeParticle(x,y,vx,vy,life,size,hue,glow=1){ return {x,y,vx,vy,life,max:life,size,hue,glow}; }
+  function spawnBurst(x,y,count,spd,life,hue=200, smoky=false){
+    for(let i=0;i<count;i++){
+      const a=rand(TAU,0), s=rand(spd, spd*0.25);
+      const vx=Math.cos(a)*s + rand(40,-40);
+      const vy=Math.sin(a)*s + rand(40,-40);
+      const l=rand(life*1.2, life*0.65);
+      const size=rand(4.2,1.6)*(smoky?1.3:1);
+      particles.push(makeParticle(x,y,vx,vy,l,size,hue+rand(18,-18), smoky?0.7:1));
+    }
+  }
+  function spawnRing(x,y,r,count,life,hue=180){
+    for(let i=0;i<count;i++){
+      const a=(i/count)*TAU + rand(0.08,-0.08);
+      const px=x+Math.cos(a)*r, py=y+Math.sin(a)*r;
+      const vx=Math.cos(a)*rand(180,90), vy=Math.sin(a)*rand(180,90);
+      particles.push(makeParticle(px,py,vx,vy,life,rand(4.8,2.1),hue+rand(30,-30),1));
+    }
+  }
+  function updateParticles(dt){
+    const drag=1-dt*2.2;
+    for(const p of particles){
+      p.x+=p.vx*dt; p.y+=p.vy*dt;
+      p.vx*=drag; p.vy*=drag;
+      p.life-=dt;
+    }
+    for(let i=particles.length-1;i>=0;i--) if(particles[i].life<=0) particles.splice(i,1);
+  }
+
+  function rechargeDash(pl,dt){
+    pl.dashRechargeT+=dt;
+    while(pl.dashRechargeT>=pl.dashRechargeTime){
+      pl.dashRechargeT-=pl.dashRechargeTime;
+      if(pl.dash<pl.dashMax) pl.dash+=1;
+    }
+  }
+  function dashForward(pl,dx,dy){
+    if(pl.dash<1) return false;
+    const m=Math.hypot(dx,dy);
+    if(m<1e-6) return false;
+    pl.dash-=1;
+    const burst=960;
+    pl.vx += (dx/m)*burst;
+    pl.vy += (dy/m)*burst;
+    cam.shake=Math.max(cam.shake,8);
+    spawnRing(pl.x,pl.y,38,18,0.20,210);
+    return true;
+  }
+
+  function rawAttackDpsFor(pl){
+    return totalAttackDps(pl.rate,pl.speed) * pl.dpsMult;
+  }
+  function currentSizeBoostActive(pl){
+    return pl.sizeBoostEnabled && pl.speed > G.sizeBoostThreshold;
+  }
+  function currentProjectileManaMultiplier(pl){
+    return currentSizeBoostActive(pl) ? G.sizeBoostManaMult : 1;
+  }
+  function projectileRadiusForPlayer(pl){
+    if(currentSizeBoostActive(pl)){
+      return projectileRadiusFromSpeed(G.sizeBoostRefSpeed) * G.sizeBoostScale;
+    }
+    return projectileRadiusFromSpeed(pl.speed);
+  }
+  function attackManaDrainPerSecond(pl){
+    return manaDrainPerSecond(pl.dpsMult) * currentProjectileManaMultiplier(pl);
+  }
+  function ballManaCostPerShot(pl){
+    return manaCostPerShot(pl.dpsMult, pl.rate) * currentProjectileManaMultiplier(pl);
+  }
+  function perShotDamage(pl){
+    const scale = damageScaleFromSpeed(pl.speed);
+    return (rawAttackDpsFor(pl)/Math.max(pl.rate,1)) * scale;
+  }
+
+  function reflectOnRect(b,w){
+    const left=w.x,right=w.x+w.w,top=w.y,bottom=w.y+w.h;
+    const cx=clamp(b.x,left,right), cy=clamp(b.y,top,bottom);
+    const dx=b.x-cx, dy=b.y-cy;
+    if(Math.abs(dx)>Math.abs(dy)){
+      b.vx*=-1;
+      b.x = (dx>0)? right+b.r : left-b.r;
+    }else{
+      b.vy*=-1;
+      b.y = (dy>0)? bottom+b.r : top-b.r;
+    }
+  }
+
+  function setP1Mult(v){
+    v=clamp(Number(v)||1,1,2);
+    v=Math.round(v*100)/100;
+    p1.dpsMult=v;
+    multSlider.value=String(v);
+    multInput.value=String(v.toFixed(2));
+    if(typeof DEV!=="undefined" && DEV && DEV.p1_mult) DEV.p1_mult.value=String(v.toFixed(2));
+    updateSpellReadouts();
+  }
+
+  function setP1Rate(v){
+    v=clamp(Math.round(Number(v)||DEFAULTS.p1.rate),1,1000);
+    p1.rate=v;
+    rateSlider.value=String(invExpMap(v,1,1000));
+    rateInput.value=String(v);
+    if(typeof DEV!=="undefined" && DEV && DEV.p1_rate) DEV.p1_rate.value=String(v);
+    updateSpellReadouts();
+  }
+
+  function setP1Speed(v){
+    v=clamp(Math.round(Number(v)||DEFAULTS.p1.speed),1,20000);
+    p1.speed=v;
+    speedSlider.value=String(invExpMap(v,1,20000));
+    speedInput.value=String(v);
+    if(typeof DEV!=="undefined" && DEV && DEV.p1_speed) DEV.p1_speed.value=String(v);
+    updateSpellReadouts();
+  }
+
+  function activateTimeLever(pl){
+    pl.timeT=G.timeDuration;
+    spawnRing(pl.x,pl.y,46,18,0.18,275);
+    spawnBurst(pl.x,pl.y,16,240,0.18,275,true);
+  }
+
+  function applyTimeDot(target, extraTotal, duration){
+    if(duration<=0 || extraTotal<=0) return;
+    const addDps=extraTotal/duration;
+    target.status.timeDps += addDps;
+    target.status.timeT = Math.max(target.status.timeT, duration);
+    spawnRing(target.x,target.y,26,10,0.12,275);
+  }
+
+  function hitPlayer(pl,dmg){
+    if(pl.blocking){
+      cam.shake=Math.max(cam.shake,4);
+      spawnRing(pl.x,pl.y,34,10,0.10,200);
+      return false;
+    }
+
+    if(ctfCfg.enabled){
+      if(pl===p1) dropCarriedFlag("p1");
+      if(pl===cpu) dropCarriedFlag("cpu");
+    }
+
+    pl.hp-=dmg;
+    cam.shake=Math.max(cam.shake,7);
+    spawnBurst(pl.x,pl.y,18,240,0.20,350);
+    if(pl.hp<=0){ pl.hp=0; pl.alive=false; }
+    return true;
+  }
+
+  function dealCombatHit(attacker, target, dmg){
+    const landed=hitPlayer(target,dmg);
+    if(landed && attacker && attacker.timeT>0 && G.timeMult>1){
+      const extra=dmg*(G.timeMult-1);
+      applyTimeDot(target, extra, G.timeDuration);
+    }
+    return landed;
+  }
+
+  function applyBurn(target,dps,duration){
+    target.status.burnDps=Math.max(target.status.burnDps,dps);
+    target.status.burnT=Math.max(target.status.burnT,duration);
+    spawnRing(target.x,target.y,30,12,0.18,55);
+  }
+  function updateStatus(pl,dt){
+    if(pl.status.burnT>0){
+      hitPlayer(pl, pl.status.burnDps*dt);
+      pl.status.burnT-=dt;
+      if(Math.random()<0.35) spawnBurst(pl.x,pl.y,4,120,0.12,50,true);
+      if(pl.status.burnT<=0){ pl.status.burnT=0; pl.status.burnDps=0; }
+    }
+    if(pl.status.timeT>0){
+      hitPlayer(pl, pl.status.timeDps*dt);
+      pl.status.timeT-=dt;
+      if(Math.random()<0.18) spawnBurst(pl.x,pl.y,2,80,0.10,275,true);
+      if(pl.status.timeT<=0){ pl.status.timeT=0; pl.status.timeDps=0; }
+    }
+  }
+
+  function updateBlock(pl,holding,dt){
+    if(!holding){
+      pl.blocking=false;
+      pl.blockT=0;
+      pl.blockUnlocked=true;
+      return;
+    }
+
+    if(!pl.blocking && pl.blockUnlocked){
+      if(pl.mana < G.blockStartCost) return;
+      pl.mana = Math.max(0, pl.mana - G.blockStartCost);
+      pl.wasSpending = true;
+      pl.regenDelayT = pl.regenDelayAfterSpend;
+      pl.blocking = true;
+      pl.blockT = G.blockDuration;
+      pl.blockUnlocked = false;
+      spawnRing(pl.x,pl.y,40,16,0.18,200);
+    }
+
+    if(!pl.blocking) return;
+
+    const drain = G.blockDrain * dt;
+    if(pl.mana < drain){
+      pl.blocking=false;
+      pl.blockT=0;
+      return;
+    }
+
+    pl.mana = Math.max(0, pl.mana - drain);
+    pl.wasSpending = true;
+    pl.regenDelayT = pl.regenDelayAfterSpend;
+    pl.blockT -= dt;
+
+    if(pl.blockT <= 0){
+      pl.blocking=false;
+      pl.blockT=0;
+    }
+  }
+
+  function fireAttack(pl,aimAng){
+    if(pl.shootCd>0) return;
+    if(pl.blocking) return;
+    pl.shootCd = 1/Math.max(pl.rate,1);
+
+    const dmg=perShotDamage(pl);
+    const spd=pl.speed;
+    const r=projectileRadiusForPlayer(pl);
+    const spread=clamp((Math.max(pl.rate,1)/1000)*0.05,0,0.05);
+    const ang=aimAng + rand(spread,-spread);
+
+    const boosted = (Math.abs(pl.dpsMult-2) < 1e-6);
+    const spawnX = pl.x + Math.cos(ang)*(pl.r+6);
+    const spawnY = pl.y + Math.sin(ang)*(pl.r+6);
+
+    bullets.push({
+      x: spawnX,
+      y: spawnY,
+      prevX: spawnX,
+      prevY: spawnY,
+      originX: spawnX,
+      originY: spawnY,
+      vx: Math.cos(ang)*spd,
+      vy: Math.sin(ang)*spd,
+      r, dmg,
+      owner: pl.isHuman ? "p1" : "cpu",
+      boosted,
+      lineHitActive: shouldUseLineHitbox(spd),
+      lineHitTriggered:false,
+      lineStartX:0,
+      lineStartY:0,
+      lineEndX:0,
+      lineEndY:0,
+      lineDelay:0,
+      lineT:0,
+      lineDuration:0,
+      lineHitConsumed:false,
+      lineStopped:false,
+      traveled:0,
+      alreadyHitTarget:false
+    });
+
+    spawnBurst(pl.x,pl.y,6,240,0.18, pl.isHuman?210:330);
+  }
+
+  function fireBall(pl,aimAng){
+    if(pl.ballCd>0) return;
+    if(pl.blocking) return;
+
+    const cost = ballManaCostPerShot(pl);
+    if(pl.mana<=10 || pl.mana < cost) return;
+
+    pl.mana = Math.max(0, pl.mana - cost);
+    pl.wasSpending = true;
+    pl.regenDelayT = pl.regenDelayAfterSpend;
+
+    pl.ballCd = 1/Math.max(pl.rate,1);
+
+    const spd=pl.speed;
+    const r=Math.max(8, projectileRadiusForPlayer(pl) + 6);
+    const dmg=perShotDamage(pl) * G.ballFactor;
+
+    const ang=aimAng;
+    balls.push({
+      x: pl.x + Math.cos(ang)*(pl.r+10),
+      y: pl.y + Math.sin(ang)*(pl.r+10),
+      vx: Math.cos(ang)*spd,
+      vy: Math.sin(ang)*spd,
+      r, dmg,
+      owner: pl.isHuman ? "p1" : "cpu",
+      life: G.ballLife
+    });
+
+    cam.shake=Math.max(cam.shake,4);
+    spawnRing(pl.x,pl.y,28,10,0.14,28);
+    spawnBurst(pl.x,pl.y,10,220,0.18,28,true);
+  }
+
+  function fireMolotov(pl,aimAng){
+    if(pl.moloCd>0) return;
+    pl.moloCd=G.moloCd;
+
+    const spd=Math.max(1,G.moloSpeed);
+    molotovs.push({
+      x: pl.x + Math.cos(aimAng)*(pl.r+10),
+      y: pl.y + Math.sin(aimAng)*(pl.r+10),
+      vx: Math.cos(aimAng)*spd,
+      vy: Math.sin(aimAng)*spd,
+      r: 10,
+      owner: pl.isHuman ? "p1" : "cpu",
+      spin: rand(6,-6)
+    });
+
+    spawnRing(pl.x,pl.y,30,10,0.14,55);
+    spawnBurst(pl.x,pl.y,10,220,0.18,55,true);
+  }
+
+  function triggerKnives(pl){
+    if(pl.knifeCd>0) return;
+    pl.knifeCd=G.knifeCd;
+
+    knifeBursts.push({ x:pl.x, y:pl.y, t:0.22, max:0.22, radius:G.knifeDist });
+
+    const enemy = pl.isHuman ? cpu : p1;
+    if(enemy.alive){
+      const d=dist(pl.x,pl.y,enemy.x,enemy.y);
+      if(d<=G.knifeDist && hasLineOfSight(pl.x,pl.y,enemy.x,enemy.y)){
+        dealCombatHit(pl, enemy, G.knifeDamage);
+        cam.shake=Math.max(cam.shake,10);
+        spawnRing(enemy.x,enemy.y,60,20,0.18,0);
+        spawnBurst(enemy.x,enemy.y,26,280,0.22,0);
+      }
+    }
+    spawnRing(pl.x,pl.y,G.knifeDist,16,0.14,0);
+  }
+  function updateKnifeBursts(dt){
+    for(const k of knifeBursts) k.t-=dt;
+    for(let i=knifeBursts.length-1;i>=0;i--) if(knifeBursts[i].t<=0) knifeBursts.splice(i,1);
+  }
+
+  function updateMana(pl,dt,spending){
+    if(spending && pl.mana>10){
+      pl.mana = Math.max(0, pl.mana - attackManaDrainPerSecond(pl)*dt);
+    }
+    if(pl.wasSpending && !spending){
+      pl.regenDelayT = pl.regenDelayAfterSpend;
+    }
+    pl.wasSpending = spending;
+
+    if(!spending && pl.regenDelayT>0){
+      pl.regenDelayT -= dt;
+      if(pl.regenDelayT<0) pl.regenDelayT=0;
+    }
+    if(!spending && pl.regenDelayT===0){
+      pl.mana = Math.min(pl.manaMax, pl.mana + pl.manaRegen*dt);
+    }
+  }
+
+  const TELEPORT_COST = 5000;
+  const TELEPORT_MIN_ENEMY_DIST = 240;
+
+  function attemptTeleport(pl, tx, ty){
+    if(pl.tpT>0) return;
+    if(pl.mana < TELEPORT_COST) return;
+
+    const enemy = pl.isHuman ? cpu : p1;
+    if(enemy.alive){
+      if(dist(pl.x,pl.y,enemy.x,enemy.y) < TELEPORT_MIN_ENEMY_DIST) return;
+    }
+
+    const t = { x: clamp(tx, 0, arena.w), y: clamp(ty, 0, arena.h), r: pl.r, vx:0, vy:0 };
+    resolveWallsForPlayer(t);
+
+    if(enemy.alive){
+      if(dist(t.x,t.y,enemy.x,enemy.y) < TELEPORT_MIN_ENEMY_DIST) return;
+    }
+
+    pl.mana = Math.max(0, pl.mana - TELEPORT_COST);
+    pl.wasSpending = true;
+    pl.regenDelayT = pl.regenDelayAfterSpend;
+
+    pl.tpTx = t.x;
+    pl.tpTy = t.y;
+    pl.tpMax = G.teleportTime;
+    pl.tpT = G.teleportTime;
+
+    cam.shake=Math.max(cam.shake,6);
+    spawnRing(pl.x,pl.y,64,22,0.20,210);
+    spawnBurst(pl.x,pl.y,18,260,0.20,210,true);
+  }
+
+  function updateTeleport(pl,dt){
+    if(pl.tpT<=0) return;
+    pl.tpT -= dt;
+
+    if(Math.random()<0.55){
+      spawnBurst(pl.x,pl.y,1,80,0.08,210,true);
+    }
+
+    if(pl.tpT<=0){
+      pl.tpT=0;
+      pl.x = pl.tpTx;
+      pl.y = pl.tpTy;
+      pl.vx = 0; pl.vy = 0;
+      resolveWallsForPlayer(pl);
+      cam.shake=Math.max(cam.shake,10);
+      spawnRing(pl.x,pl.y,70,26,0.22,210);
+      spawnBurst(pl.x,pl.y,26,320,0.24,210,true);
+    }
+  }
+
+  function fireSniper(pl,aimAng){
+    if(pl.blocking) return;
+    if(pl.mana < G.sniperCost) return;
+
+    pl.mana = Math.max(0, pl.mana - G.sniperCost);
+    pl.wasSpending = true;
+    pl.regenDelayT = pl.regenDelayAfterSpend;
+
+    const sx = pl.x;
+    const sy = pl.y;
+    const end = raycastBeamEnd(sx, sy, aimAng, 5000);
+    let hit=false;
+
+    const enemy = pl.isHuman ? cpu : p1;
+    if(enemy.alive){
+      const along = ((enemy.x-sx)*Math.cos(aimAng) + (enemy.y-sy)*Math.sin(aimAng));
+      const beamLen = dist(sx,sy,end.x,end.y);
+      const d = pointToSegmentDistance(enemy.x,enemy.y,sx,sy,end.x,end.y);
+      if(along >= 0 && along <= beamLen + enemy.r && d <= enemy.r + 8){
+        dealCombatHit(pl, enemy, G.sniperDamage);
+        hit=true;
+        spawnRing(enemy.x,enemy.y,52,18,0.18,210);
+        spawnBurst(enemy.x,enemy.y,24,320,0.22,210);
+      }
+    }
+
+    sniperBeams.push({
+      x1:sx, y1:sy, x2:end.x, y2:end.y,
+      t:0.16, max:0.16, hit
+    });
+
+    cam.shake=Math.max(cam.shake,11);
+    spawnRing(pl.x,pl.y,34,12,0.14,210);
+    spawnBurst(pl.x,pl.y,18,280,0.18,210,true);
+  }
+
+  function updateSniperBeams(dt){
+    for(const b of sniperBeams) b.t-=dt;
+    for(let i=sniperBeams.length-1;i>=0;i--) if(sniperBeams[i].t<=0) sniperBeams.splice(i,1);
+  }
+
+  function explodeGrenade(x,y,owner){
+    const radius=G.grenRadius;
+    const damage=G.grenDamage;
+
+    spawnRing(x,y, radius, 26, 0.24, 40);
+    spawnBurst(x,y, 46, 420, 0.26, 40, true);
+    cam.shake=Math.max(cam.shake,12);
+
+    const attacker = owner==="p1" ? p1 : cpu;
+    const target = owner==="p1" ? cpu : p1;
+    if(target.alive){
+      const d=dist(x,y,target.x,target.y);
+      if(d<=radius){
+        const t=1-(d/radius);
+        const dmg=damage * clamp(t,0,1);
+        if(dmg>0) dealCombatHit(attacker, target, dmg);
+      }
+    }
+  }
+
+  function throwGrenade(pl, targetX, targetY){
+    if(pl.grenCd>0) return;
+    pl.grenCd = G.grenCd;
+
+    const tx=clamp(targetX, 0, arena.w);
+    const ty=clamp(targetY, 0, arena.h);
+
+    const spd=Math.max(1,G.grenSpeed);
+    const dx=tx-pl.x, dy=ty-pl.y;
+    const d=Math.hypot(dx,dy) || 1;
+    const vx=dx/d * spd;
+    const vy=dy/d * spd;
+
+    grenades.push({
+      x:pl.x, y:pl.y,
+      vx, vy,
+      tx, ty,
+      owner: pl.isHuman?"p1":"cpu",
+      r: 9,
+      t: d/spd
+    });
+
+    spawnRing(pl.x,pl.y, 26, 10, 0.14, 40);
+  }
+
+  function updateGrenades(dt){
+    for(let i=grenades.length-1;i>=0;i--){
+      const g=grenades[i];
+      const step = Math.min(dt, g.t);
+      g.x += g.vx * step;
+      g.y += g.vy * step;
+      g.t -= step;
+
+      if(Math.random()<0.25) spawnBurst(g.x,g.y,1,60,0.08,40,true);
+
+      if(g.t<=0){
+        g.x=g.tx; g.y=g.ty;
+        explodeGrenade(g.x,g.y,g.owner);
+        grenades.splice(i,1);
+      }
+    }
+  }
+
+  function computeDodgeVector(pl){
+    let best=null, bd=999999;
+    for(const b of bullets){
+      if((pl.isHuman && b.owner==="p1") || (!pl.isHuman && b.owner==="cpu")) continue;
+      const d=dist(pl.x,pl.y,b.x,b.y);
+      if(d<bd){ bd=d; best=b; }
+    }
+    if(!best || bd>420) return {x:0,y:0};
+    const m=Math.hypot(best.vx,best.vy)||1;
+    const px=-best.vy/m, py=best.vx/m;
+    const toX=pl.x-best.x, toY=pl.y-best.y;
+    const side=Math.sign(toX*px + toY*py) || 1;
+    return {x:px*side,y:py*side};
+  }
+
+  function updateCpuAI(dt){
+    if(!cpu.alive || !p1.alive) return;
+    cpu.ai.lastDecision += dt;
+    const canSee=hasLineOfSight(cpu.x,cpu.y,p1.x,p1.y);
+
+    const desiredAim=angleTo(cpu.x,cpu.y,p1.x,p1.y) + rand(cpu.ai.aimNoise,-cpu.ai.aimNoise);
+    cpu.aim = lerpAngle(cpu.aim, desiredAim, dt / cpu.ai.reaction);
+
+    if(cpu.ai.lastDecision >= cpu.ai.reaction){
+      cpu.ai.lastDecision=0;
+
+      let dx=0,dy=0;
+
+      if(ctfCfg.enabled){
+        let tx=p1.x, ty=p1.y;
+
+        if(flagsState.p1.carrier==="cpu"){
+          tx=bases.cpu.x; ty=bases.cpu.y;
+        }else if(flagsState.cpu.carrier==="p1"){
+          tx=p1.x; ty=p1.y;
+        }else if(flagsState.cpu.dropped){
+          tx=flagsState.cpu.x; ty=flagsState.cpu.y;
+        }else{
+          tx=flagsState.p1.x; ty=flagsState.p1.y;
+        }
+
+        const toTarget=angleTo(cpu.x,cpu.y,tx,ty);
+        dx+=Math.cos(toTarget);
+        dy+=Math.sin(toTarget);
+
+        const dodge=computeDodgeVector(cpu);
+        dx+=dodge.x*cpu.ai.dodge*0.7;
+        dy+=dodge.y*cpu.ai.dodge*0.7;
+
+        const m=Math.hypot(dx,dy);
+        if(m>1e-6){ dx/=m; dy/=m; }
+        cpu.ai.desiredDir.x=dx; cpu.ai.desiredDir.y=dy;
+      }else{
+        const toP=angleTo(cpu.x,cpu.y,p1.x,p1.y);
+        const side=(Math.random()<0.5?-1:1);
+        const strafeAng=toP + side*(Math.PI/2);
+
+        const ideal=520;
+        const d=dist(cpu.x,cpu.y,p1.x,p1.y);
+        const approach=clamp((d-ideal)/ideal,-1,1);
+
+        if(!canSee){
+          dx+=Math.cos(toP)*0.7; dy+=Math.sin(toP)*0.7;
+          dx+=Math.cos(strafeAng)*cpu.ai.peek; dy+=Math.sin(strafeAng)*cpu.ai.peek;
+        }else{
+          dx+=Math.cos(strafeAng)*cpu.ai.strafe; dy+=Math.sin(strafeAng)*cpu.ai.strafe;
+          dx+=Math.cos(toP)*(0.25*approach); dy+=Math.sin(toP)*(0.25*approach);
+        }
+
+        const dodge=computeDodgeVector(cpu);
+        dx+=dodge.x*cpu.ai.dodge; dy+=dodge.y*cpu.ai.dodge;
+
+        const m=Math.hypot(dx,dy);
+        if(m>1e-6){ dx/=m; dy/=m; }
+        cpu.ai.desiredDir.x=dx; cpu.ai.desiredDir.y=dy;
+      }
+
+      if(dist(cpu.x,cpu.y,p1.x,p1.y) <= G.knifeDist+10 && cpu.knifeCd<=0){
+        if(Math.random()<cpu.ai.useKnives) triggerKnives(cpu);
+      }
+      if(canSee && cpu.moloCd<=0 && Math.random()<cpu.ai.useMolotov){
+        fireMolotov(cpu, cpu.aim);
+      }
+    }
+  }
+
+  function clear(){ ctx.fillStyle="#070915"; ctx.fillRect(0,0,W,H); }
+
+  function drawBackground(){
+    const vp=gameplayViewport();
+    ctx.save(); ctx.beginPath(); ctx.rect(0,0,vp.w,vp.h); ctx.clip();
+    const g=ctx.createRadialGradient(vp.w*0.2,vp.h*0.2,0, vp.w*0.2,vp.h*0.2, Math.max(vp.w,vp.h)*0.9);
+    g.addColorStop(0,"rgba(122,167,255,0.11)");
+    g.addColorStop(0.45,"rgba(176,122,255,0.06)");
+    g.addColorStop(1,"rgba(92,255,193,0.03)");
+    ctx.fillStyle=g; ctx.fillRect(0,0,vp.w,vp.h);
+
+    const vg=ctx.createRadialGradient(vp.w/2,vp.h/2,Math.min(vp.w,vp.h)*0.25, vp.w/2,vp.h/2,Math.max(vp.w,vp.h)*0.75);
+    vg.addColorStop(0,"rgba(0,0,0,0)");
+    vg.addColorStop(1,"rgba(0,0,0,0.55)");
+    ctx.fillStyle=vg; ctx.fillRect(0,0,vp.w,vp.h);
+    ctx.restore();
+  }
+
+  function roundRect(c,x,y,w,h,r){
+    const rr=Math.min(r,w/2,h/2);
+    c.beginPath();
+    c.moveTo(x+rr,y);
+    c.arcTo(x+w,y,x+w,y+h,rr);
+    c.arcTo(x+w,y+h,x,y+h,rr);
+    c.arcTo(x,y+h,x,y,rr);
+    c.arcTo(x,y,x+w,y,rr);
+    c.closePath();
+  }
+
+  function drawArena(){
+    const vp=gameplayViewport();
+    ctx.save(); ctx.beginPath(); ctx.rect(0,0,vp.w,vp.h); ctx.clip();
+
+    const topLeft=worldToScreen(0,0);
+    ctx.fillStyle="rgba(255,255,255,0.04)";
+    ctx.fillRect(topLeft.x, topLeft.y, arena.w, arena.h);
+
+    ctx.globalAlpha=0.12;
+    ctx.strokeStyle="rgba(255,255,255,0.14)";
+    ctx.lineWidth=1;
+    const step=80;
+    for(let x=0;x<=arena.w;x+=step){
+      const a=worldToScreen(x,0), b=worldToScreen(x,arena.h);
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+    }
+    for(let y=0;y<=arena.h;y+=step){
+      const a=worldToScreen(0,y), b=worldToScreen(arena.w,y);
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+
+    for(const w of walls){
+      const s=worldToScreen(w.x,w.y);
+      ctx.fillStyle="rgba(10,14,30,0.80)";
+      ctx.strokeStyle="rgba(255,255,255,0.14)";
+      ctx.lineWidth=2;
+      roundRect(ctx,s.x,s.y,w.w,w.h,14);
+      ctx.fill();
+      ctx.shadowColor="rgba(122,167,255,0.10)";
+      ctx.shadowBlur=14;
+      ctx.stroke();
+      ctx.shadowBlur=0;
+
+      ctx.globalAlpha=0.22;
+      ctx.strokeStyle="rgba(122,167,255,0.35)";
+      ctx.lineWidth=1;
+      roundRect(ctx,s.x+2,s.y+2,w.w-4,w.h-4,12);
+      ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+
+    const b=worldToScreen(0,0);
+    ctx.strokeStyle="rgba(255,255,255,0.20)";
+    ctx.lineWidth=3;
+    ctx.strokeRect(b.x,b.y,arena.w,arena.h);
+
+    ctx.restore();
+  }
+
+  function drawCtf(){
+    if(!ctfCfg.enabled) return;
+    const vp=gameplayViewport();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0,0,vp.w,vp.h);
+    ctx.clip();
+
+    for(const team of ["p1","cpu"]){
+      const base=bases[team];
+      const s=worldToScreen(base.x,base.y);
+      ctx.save();
+      ctx.globalAlpha=0.35;
+      ctx.strokeStyle=team==="p1" ? "rgba(92,255,193,0.95)" : "rgba(255,92,124,0.95)";
+      ctx.lineWidth=3;
+      ctx.beginPath();
+      ctx.arc(s.x,s.y,ctfCfg.baseRadius,0,TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    for(const team of ["p1","cpu"]){
+      const flag=flagsState[team];
+      const s=worldToScreen(flag.x,flag.y);
+      const hue = team==="p1" ? "rgba(92,255,193,0.95)" : "rgba(255,92,124,0.95)";
+      ctx.save();
+      ctx.translate(s.x,s.y);
+      ctx.globalAlpha=0.96;
+      ctx.strokeStyle="rgba(255,255,255,0.8)";
+      ctx.lineWidth=2;
+      ctx.beginPath();
+      ctx.moveTo(0,14);
+      ctx.lineTo(0,-14);
+      ctx.stroke();
+
+      ctx.fillStyle=hue;
+      ctx.shadowColor=hue;
+      ctx.shadowBlur=18;
+      ctx.beginPath();
+      ctx.moveTo(0,-14);
+      ctx.lineTo(18,-8);
+      ctx.lineTo(0,-2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur=0;
+
+      if(flag.dropped){
+        ctx.globalAlpha=0.55;
+        ctx.strokeStyle="rgba(255,255,255,0.65)";
+        ctx.lineWidth=2;
+        ctx.beginPath();
+        ctx.arc(0,0,ctfCfg.pickupRadius,0,TAU);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  function drawBullets(){
+    const vp=gameplayViewport();
+    ctx.save(); ctx.beginPath(); ctx.rect(0,0,vp.w,vp.h); ctx.clip();
+    for(const b of bullets){
+      const s=worldToScreen(b.x,b.y);
+      ctx.save();
+      ctx.translate(s.x,s.y);
+      const isP1=b.owner==="p1";
+      ctx.globalAlpha=0.95;
+
+      ctx.fillStyle=isP1?"rgba(233,236,255,0.92)":"rgba(255,92,124,0.92)";
+      ctx.shadowColor=isP1?"rgba(122,167,255,0.45)":"rgba(255,92,124,0.45)";
+      ctx.shadowBlur=18;
+      ctx.beginPath(); ctx.arc(0,0,b.r,0,TAU); ctx.fill();
+      ctx.shadowBlur=0;
+
+      if(b.boosted){
+        ctx.globalAlpha=0.90;
+        ctx.strokeStyle="rgba(90,180,255,0.92)";
+        ctx.lineWidth=2.5;
+        ctx.shadowColor="rgba(90,180,255,0.70)";
+        ctx.shadowBlur=14;
+        ctx.beginPath(); ctx.arc(0,0,b.r+3.5,0,TAU); ctx.stroke();
+        ctx.shadowBlur=0;
+      }
+
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawBasketball(ball){
+    ctx.save();
+    ctx.globalAlpha=0.98;
+    ctx.fillStyle="rgba(255,156,74,0.95)";
+    ctx.shadowColor="rgba(255,156,74,0.55)";
+    ctx.shadowBlur=18;
+    ctx.beginPath(); ctx.arc(0,0,ball.r,0,TAU); ctx.fill();
+    ctx.shadowBlur=0;
+
+    ctx.globalAlpha=0.55;
+    ctx.strokeStyle="rgba(35,20,10,0.75)";
+    ctx.lineWidth=Math.max(1.5, ball.r*0.12);
+
+    ctx.beginPath();
+    ctx.arc(0,0,ball.r*0.92, Math.PI*0.5, Math.PI*1.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0,0,ball.r*0.92, -Math.PI*0.5, Math.PI*0.5);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(0,0,ball.r*0.92, 0, Math.PI);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0,0,ball.r*0.92, Math.PI, TAU);
+    ctx.stroke();
+
+    ctx.globalAlpha=0.45;
+    ctx.beginPath();
+    ctx.arc(-ball.r*0.28,0,ball.r*0.9, -0.55, 0.55);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(ball.r*0.28,0,ball.r*0.9, Math.PI-0.55, Math.PI+0.55);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawBalls(){
+    const vp=gameplayViewport();
+    ctx.save(); ctx.beginPath(); ctx.rect(0,0,vp.w,vp.h); ctx.clip();
+    for(const b of balls){
+      const s=worldToScreen(b.x,b.y);
+      ctx.save();
+      ctx.translate(s.x,s.y);
+      drawBasketball(b);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawSniperBeams(){
+    const vp=gameplayViewport();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0,0,vp.w,vp.h);
+    ctx.clip();
+
+    for(const b of sniperBeams){
+      const a=clamp(b.t/b.max,0,1);
+      const s1=worldToScreen(b.x1,b.y1);
+      const s2=worldToScreen(b.x2,b.y2);
+
+      ctx.save();
+      ctx.globalAlpha=0.95*a;
+      ctx.strokeStyle=b.hit ? "rgba(130,220,255,0.98)" : "rgba(122,167,255,0.92)";
+      ctx.lineWidth=4;
+      ctx.shadowColor=b.hit ? "rgba(130,220,255,0.95)" : "rgba(122,167,255,0.85)";
+      ctx.shadowBlur=24;
+      ctx.beginPath();
+      ctx.moveTo(s1.x,s1.y);
+      ctx.lineTo(s2.x,s2.y);
+      ctx.stroke();
+
+      ctx.globalAlpha=0.50*a;
+      ctx.lineWidth=10;
+      ctx.shadowBlur=36;
+      ctx.beginPath();
+      ctx.moveTo(s1.x,s1.y);
+      ctx.lineTo(s2.x,s2.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  function drawMolotovs(){
+    const vp=gameplayViewport();
+    ctx.save(); ctx.beginPath(); ctx.rect(0,0,vp.w,vp.h); ctx.clip();
+    for(const m of molotovs){
+      const s=worldToScreen(m.x,m.y);
+      ctx.save();
+      ctx.translate(s.x,s.y);
+      ctx.rotate(m.spin);
+      ctx.globalAlpha=0.96;
+      ctx.fillStyle="rgba(255,213,106,0.95)";
+      ctx.shadowColor="rgba(255,213,106,0.55)";
+      ctx.shadowBlur=24;
+      ctx.beginPath();
+      ctx.moveTo(0,-12); ctx.lineTo(10,0); ctx.lineTo(0,12); ctx.lineTo(-10,0);
+      ctx.closePath(); ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.globalAlpha=0.6;
+      ctx.fillStyle="rgba(255,155,60,0.65)";
+      ctx.beginPath(); ctx.ellipse(-14,0,8,4,0,0,TAU); ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawGrenades(){
+    const vp=gameplayViewport();
+    ctx.save(); ctx.beginPath(); ctx.rect(0,0,vp.w,vp.h); ctx.clip();
+    for(const g of grenades){
+      const s=worldToScreen(g.x,g.y);
+      ctx.save();
+      ctx.translate(s.x,s.y);
+      ctx.globalAlpha=0.96;
+      ctx.fillStyle="rgba(180,255,210,0.95)";
+      ctx.shadowColor="rgba(92,255,193,0.55)";
+      ctx.shadowBlur=18;
+      ctx.beginPath(); ctx.arc(0,0,g.r,0,TAU); ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.globalAlpha=0.7;
+      ctx.strokeStyle="rgba(255,255,255,0.65)";
+      ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(0,0,g.r+3,0,TAU); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawKnifeBursts(){
+    const vp=gameplayViewport();
+    ctx.save(); ctx.beginPath(); ctx.rect(0,0,vp.w,vp.h); ctx.clip();
+    for(const k of knifeBursts){
+      const a=clamp(k.t/k.max,0,1);
+      const s=worldToScreen(k.x,k.y);
+      const r=k.radius;
+      ctx.save();
+      ctx.translate(s.x,s.y);
+
+      ctx.globalAlpha=0.35*a;
+      ctx.strokeStyle="rgba(255,255,255,0.9)";
+      ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(0,0,r,0,TAU); ctx.stroke();
+
+      const spikes=14;
+      ctx.globalAlpha=0.9*a;
+      ctx.fillStyle="rgba(255,255,255,0.92)";
+      ctx.shadowColor="rgba(255,92,124,0.25)";
+      ctx.shadowBlur=16;
+
+      for(let i=0;i<spikes;i++){
+        const ang=(i/spikes)*TAU;
+        const out=r+(1-a)*10;
+        const tip=r+18*(1-a);
+        const x1=Math.cos(ang)*out, y1=Math.sin(ang)*out;
+        const x2=Math.cos(ang+0.12)*out, y2=Math.sin(ang+0.12)*out;
+        const xt=Math.cos(ang+0.06)*tip, yt=Math.sin(ang+0.06)*tip;
+        ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(xt,yt); ctx.lineTo(x2,y2); ctx.closePath(); ctx.fill();
+      }
+
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawParticles(){
+    const vp=gameplayViewport();
+    ctx.save(); ctx.beginPath(); ctx.rect(0,0,vp.w,vp.h); ctx.clip();
+    for(const p of particles){
+      const s=worldToScreen(p.x,p.y);
+      const t=1-(p.life/p.max);
+      const a=(1-t);
+      ctx.save();
+      ctx.globalAlpha=a*0.9*p.glow;
+      ctx.fillStyle=`hsla(${p.hue},95%,65%,1)`;
+      ctx.shadowColor=`hsla(${p.hue},95%,65%,0.6)`;
+      ctx.shadowBlur=18*a;
+      const sz=p.size*(0.9+0.3*(1-t));
+      ctx.beginPath(); ctx.arc(s.x,s.y,sz,0,TAU); ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawPlayer(pl){
+    const s=worldToScreen(pl.x,pl.y);
+    ctx.save();
+    ctx.translate(s.x,s.y);
+
+    const isHuman=pl.isHuman;
+    ctx.globalAlpha=0.98;
+    ctx.fillStyle=isHuman?"rgba(233,236,255,0.96)":"rgba(255,92,124,0.92)";
+    ctx.shadowColor=isHuman?"rgba(122,167,255,0.55)":"rgba(255,92,124,0.45)";
+    ctx.shadowBlur=26;
+    ctx.beginPath(); ctx.arc(0,0,pl.r,0,TAU); ctx.fill();
+
+    ctx.shadowBlur=0;
+    ctx.globalAlpha=0.92;
+    ctx.fillStyle=isHuman?"rgba(122,167,255,0.60)":"rgba(176,122,255,0.55)";
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.arc(0,0,pl.r+12, pl.aim-0.22, pl.aim+0.22);
+    ctx.closePath();
+    ctx.fill();
+
+    if(pl.status.burnT>0){
+      ctx.globalAlpha=0.85;
+      ctx.strokeStyle="rgba(255,213,106,0.85)";
+      ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(0,0,pl.r+9,0,TAU); ctx.stroke();
+    }
+
+    if(pl.status.timeT>0){
+      ctx.globalAlpha=0.75;
+      ctx.strokeStyle="rgba(200,120,255,0.9)";
+      ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.arc(0,0,pl.r+13,0,TAU); ctx.stroke();
+    }
+
+    if(pl.blocking){
+      ctx.globalAlpha=0.82;
+      ctx.strokeStyle="rgba(122,167,255,0.95)";
+      ctx.lineWidth=4;
+      ctx.beginPath(); ctx.arc(0,0,pl.r+18,0,TAU); ctx.stroke();
+    }
+
+    if(pl.tpT>0){
+      const a=clamp(pl.tpT/(pl.tpMax||1),0,1);
+      ctx.globalAlpha=0.75;
+      ctx.strokeStyle="rgba(122,167,255,0.92)";
+      ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(0,0,pl.r+14+(1-a)*8,0,TAU); ctx.stroke();
+    }
+
+    const sm=speedMultiplier(pl.speed);
+    const finalDps=rawAttackDpsFor(pl);
+    const dmgScale=damageScaleFromSpeed(pl.speed);
+    ctx.globalAlpha=0.95;
+    ctx.fillStyle="rgba(233,236,255,0.90)";
+    ctx.font="900 12px ui-sans-serif, system-ui";
+    ctx.textAlign="center";
+    ctx.fillText(`${finalDps.toFixed(0)} DPS · speed x${sm.toFixed(2)} · dmg x${dmgScale.toFixed(2)} · mult x${pl.dpsMult.toFixed(2)}`, 0, pl.r+44);
+
+    ctx.restore();
+  }
+
+  function draw(){
+    clear();
+    drawBackground();
+    drawArena();
+    drawCtf();
+    drawSniperBeams();
+    drawBullets();
+    drawBalls();
+    drawMolotovs();
+    drawGrenades();
+    drawKnifeBursts();
+    drawParticles();
+    drawPlayer(p1);
+    drawPlayer(cpu);
+  }
+
+  function updateSpellReadouts(){
+    const rate=p1.rate, speed=p1.speed;
+    const bdps=baseDpsFromRate(rate);
+    const sm=speedMultiplier(speed);
+    const baseTotal=totalAttackDps(rate,speed);
+    const drain=attackManaDrainPerSecond(p1);
+    const finalDps=baseTotal*p1.dpsMult;
+    const dmgScale=damageScaleFromSpeed(speed);
+    const lineOn = shouldUseLineHitbox(speed) ? "ON" : "OFF";
+    const ctfOn = ctfCfg.enabled ? "ON" : "OFF";
+    const hitModeLabel = lineHitboxCfg.mode===2 ? `Straight (${lineHitboxCfg.straightFactor}/speed)` : "Variable";
+    const sizeOn = currentSizeBoostActive(p1) ? `ON x${G.sizeBoostManaMult.toFixed(2)}` : "OFF";
+
+    rateHint.textContent=`Base DPS(rate) ≈ ${bdps.toFixed(1)} at ${rate}/s`;
+    speedHint.textContent=`Speed multiplier ≈ x${sm.toFixed(2)} at ${speed} px/s · damage scale x${dmgScale.toFixed(2)} · line-hitbox ${lineOn} (${hitModeLabel}) · size boost ${sizeOn}`;
+    multHint.textContent=`Attack mana drain ≈ ${drain.toFixed(0)}/sec at x${p1.dpsMult.toFixed(2)} · Block drain ${G.blockDrain.toFixed(0)}/sec`;
+    dpsReadout.textContent=`${finalDps.toFixed(1)} DPS`;
+
+    formulaHint.textContent=
+`Final DPS = BaseDPS(rate)*SpeedMult(speed) * DPSMult(${p1.dpsMult.toFixed(2)}).
+Per-shot projectile damage also uses SpeedDamageScale(speed) = x${dmgScale.toFixed(2)}.
+High-speed line-hitbox starts at ${lineHitboxCfg.startSpeed}px/s. Mode: ${lineHitboxCfg.mode===1?"Variable":"Straight"}. Smoother: ${lineHitboxCfg.smoother.toFixed(3)}s.
+Variable multipliers: ${lineHitboxCfg.mul1}/${lineHitboxCfg.mul2}/${lineHitboxCfg.mul3}. Straight factor: ${lineHitboxCfg.straightFactor}.
+Block: start ${G.blockStartCost} mana, drain ${G.blockDrain}/s, max ${G.blockDuration.toFixed(1)}s.
+Time buff: x${G.timeMult.toFixed(2)} total damage over ${G.timeDuration.toFixed(1)}s.
+Size boost: ${p1.sizeBoostEnabled?"Enabled":"Disabled"} · threshold ${G.sizeBoostThreshold}px/s · ref ${G.sizeBoostRefSpeed}px/s · radius x${G.sizeBoostScale.toFixed(2)} · mana x${G.sizeBoostManaMult.toFixed(2)}.
+CTF mode: ${ctfOn}. Pickup radius: ${ctfCfg.pickupRadius}px. Base radius: ${ctfCfg.baseRadius}px. Drop pickup cooldown: ${ctfCfg.pickupCooldown.toFixed(1)}s.`;
+  }
+
+  function bindSliders(){
+    const syncRate=(v)=>{
+      v=clamp(Math.round(Number(v)||DEFAULTS.p1.rate),1,1000);
+      rateSlider.value=String(invExpMap(v,1,1000));
+      rateInput.value=String(v);
+      p1.rate=v;
+      updateSpellReadouts();
+    };
+    const syncSpeed=(v)=>{
+      v=clamp(Math.round(Number(v)||DEFAULTS.p1.speed),1,20000);
+      speedSlider.value=String(invExpMap(v,1,20000));
+      speedInput.value=String(v);
+      p1.speed=v;
+      updateSpellReadouts();
+    };
+    const syncMult=(v)=>{
+      v=clamp(Number(v)||1,1,2);
+      v=Math.round(v*100)/100;
+      multSlider.value=String(v);
+      multInput.value=String(v);
+      p1.dpsMult=v;
+      updateSpellReadouts();
+    };
+
+    rateSlider.oninput=()=>{
+      const value=expMap(Number(rateSlider.value),1,1000);
+      const v=clamp(Math.round(value),1,1000);
+      p1.rate=v; rateInput.value=String(v);
+      updateSpellReadouts();
+    };
+    speedSlider.oninput=()=>{
+      const value=expMap(Number(speedSlider.value),1,20000);
+      const v=clamp(Math.round(value),1,20000);
+      p1.speed=v; speedInput.value=String(v);
+      updateSpellReadouts();
+    };
+    multSlider.oninput=()=>syncMult(multSlider.value);
+
+    rateInput.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ syncRate(rateInput.value); rateInput.blur(); } });
+    speedInput.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ syncSpeed(speedInput.value); speedInput.blur(); } });
+    multInput.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ syncMult(multInput.value); multInput.blur(); } });
+
+    rateInput.addEventListener("blur", ()=>{ rateInput.value=String(p1.rate); });
+    speedInput.addEventListener("blur",()=>{ speedInput.value=String(p1.speed); });
+    multInput.addEventListener("blur", ()=>{ multInput.value=String(p1.dpsMult.toFixed(2)); });
+
+    difficultySel.onchange=()=>{ diffKey=difficultySel.value; applyDifficulty(); };
+  }
+
+  function flagStatusText(team){
+    if(!ctfCfg.enabled) return "Off";
+    const own=flagsState[team];
+    const enemy=flagsState[otherTeam(team)];
+
+    if(enemy.carrier===team) return "Carrying";
+    if(own.dropped) return "Dropped";
+    if(own.carrier===otherTeam(team)) return "Stolen";
+    return "Home";
+  }
+
+  function updateHUD(){
+    p1HpFill.style.width=((p1.hp/p1.hpMax)*100).toFixed(1)+"%";
+    p2HpFill.style.width=((cpu.hp/cpu.hpMax)*100).toFixed(1)+"%";
+    p1HpText.textContent=`${fmt(p1.hp)}/${fmt(p1.hpMax)}`;
+    p2HpText.textContent=`${fmt(cpu.hp)}/${fmt(cpu.hpMax)}`;
+
+    p1ManaFill.style.width=((p1.mana/p1.manaMax)*100).toFixed(1)+"%";
+    p1ManaText.textContent=`${Math.floor(p1.mana)}`;
+
+    p2ManaFill.style.width=((cpu.mana/cpu.manaMax)*100).toFixed(1)+"%";
+    p2ManaText.textContent=`${Math.floor(cpu.mana)}`;
+
+    p1DashText.textContent=`${p1.dash.toFixed(0)}/${p1.dashMax}`;
+
+    p1MoloText.textContent=(p1.moloCd>0)?`CD ${p1.moloCd.toFixed(1)}s`:"Ready";
+    p1MoloText.style.color=(p1.moloCd>0)?"var(--warn)":"var(--text)";
+
+    p1KnifeText.textContent=(p1.knifeCd>0)?`CD ${p1.knifeCd.toFixed(1)}s`:"Ready";
+    p1KnifeText.style.color=(p1.knifeCd>0)?"var(--bad)":"var(--text)";
+
+    p1GrenText.textContent=(p1.grenCd>0)?`CD ${p1.grenCd.toFixed(1)}s`:"Ready";
+    p1GrenText.style.color=(p1.grenCd>0)?"var(--good)":"var(--text)";
+
+    p1BallText.textContent=(p1.ballCd>0)?`CD ${p1.ballCd.toFixed(2)}s`:"Ready";
+    p1BallText.style.color=(p1.ballCd>0)?"var(--warn)":"var(--text)";
+
+    p1SniperText.textContent=(p1.mana>=G.sniperCost) ? "Ready" : `Need ${Math.max(0,Math.ceil(G.sniperCost-p1.mana))}`;
+    p1SniperText.style.color=(p1.mana>=G.sniperCost)?"var(--text)":"var(--accent)";
+
+    if(p1.blocking){
+      p1BlockText.textContent=`${p1.blockT.toFixed(2)}s`;
+      p1BlockText.style.color="var(--accent)";
+    }else{
+      p1BlockText.textContent=(p1.mana>=G.blockStartCost) ? "Ready" : `Need ${Math.max(0,Math.ceil(G.blockStartCost-p1.mana))}`;
+      p1BlockText.style.color=(p1.mana>=G.blockStartCost)?"var(--text)":"var(--accent)";
+    }
+
+    if(p1.timeT>0){
+      p1TimeText.textContent=`${p1.timeT.toFixed(1)}s`;
+      p1TimeText.style.color="var(--accent2)";
+    }else{
+      p1TimeText.textContent="Ready";
+      p1TimeText.style.color="var(--text)";
+    }
+
+    p1FlagText.textContent=flagStatusText("p1");
+    p2FlagText.textContent=flagStatusText("cpu");
+  }
+
+  const DEV={
+    p1_hpmax:el("dev_p1_hpmax"),
+    p1_manamax:el("dev_p1_manamax"),
+    p1_regen:el("dev_p1_regen"),
+    regen_delay:el("dev_regen_delay"),
+    drain_x1:el("dev_drain_x1"),
+    drain_x2:el("dev_drain_x2"),
+
+    p1_rate:el("dev_p1_rate"),
+    p1_speed:el("dev_p1_speed"),
+    p1_mult:el("dev_p1_mult"),
+
+    dmg_scale_spd1:el("dev_dmg_scale_spd1"),
+    dmg_scale_val1:el("dev_dmg_scale_val1"),
+    dmg_scale_spd2:el("dev_dmg_scale_spd2"),
+    dmg_scale_val2:el("dev_dmg_scale_val2"),
+    dmg_scale_spd3:el("dev_dmg_scale_spd3"),
+    dmg_scale_val3:el("dev_dmg_scale_val3"),
+    dmg_scale_spd4:el("dev_dmg_scale_spd4"),
+    dmg_scale_val4:el("dev_dmg_scale_val4"),
+
+    line_hitbox_start_speed:el("dev_line_hitbox_start_speed"),
+    line_hitbox_mode:el("dev_line_hitbox_mode"),
+    line_hitbox_straight_factor:el("dev_line_hitbox_straight_factor"),
+    line_hitbox_smoother:el("dev_line_hitbox_smoother"),
+    line_hitbox_mul_1:el("dev_line_hitbox_mul_1"),
+    line_hitbox_mul_2:el("dev_line_hitbox_mul_2"),
+    line_hitbox_mul_3:el("dev_line_hitbox_mul_3"),
+    line_hitbox_len_1:el("dev_line_hitbox_len_1"),
+    line_hitbox_len_2:el("dev_line_hitbox_len_2"),
+
+    block_start_cost:el("dev_block_start_cost"),
+    block_drain:el("dev_block_drain"),
+    block_duration:el("dev_block_duration"),
+
+    time_mult:el("dev_time_mult"),
+    time_duration:el("dev_time_duration"),
+
+    size_boost_default:el("dev_size_boost_default"),
+    size_boost_threshold:el("dev_size_boost_threshold"),
+    size_boost_ref_speed:el("dev_size_boost_ref_speed"),
+    size_boost_scale:el("dev_size_boost_scale"),
+    size_boost_mana_mult:el("dev_size_boost_mana_mult"),
+
+    ctf_enabled:el("dev_ctf_enabled"),
+    ctf_pickup_radius:el("dev_ctf_pickup_radius"),
+    ctf_base_radius:el("dev_ctf_base_radius"),
+    ctf_pickup_cd:el("dev_ctf_pickup_cd"),
+
+    ball_factor:el("dev_ball_factor"),
+    ball_life:el("dev_ball_life"),
+
+    sniper_cost:el("dev_sniper_cost"),
+    sniper_dmg:el("dev_sniper_dmg"),
+
+    molo_cd:el("dev_molo_cd"),
+    molo_spd:el("dev_molo_spd"),
+    molo_dps:el("dev_molo_dps"),
+
+    knife_cd:el("dev_knife_cd"),
+    knife_dist:el("dev_knife_dist"),
+    knife_dmg:el("dev_knife_dmg"),
+
+    gren_cd:el("dev_gren_cd"),
+    gren_spd:el("dev_gren_spd"),
+    gren_dmg:el("dev_gren_dmg"),
+    gren_rad:el("dev_gren_rad"),
+
+    tp_time:el("dev_tp_time"),
+
+    curve_mix:el("dev_curve_mix"),
+    curve_exp:el("dev_curve_exp"),
+
+    p1_dashmax:el("dev_p1_dashmax"),
+    p1_dashrt:el("dev_p1_dashrt"),
+
+    cpu_hpmax:el("dev_cpu_hpmax"),
+    cpu_manamax:el("dev_cpu_manamax"),
+    cpu_regen:el("dev_cpu_regen"),
+    cpu_rate:el("dev_cpu_rate"),
+    cpu_speed:el("dev_cpu_speed"),
+    cpu_mult:el("dev_cpu_mult"),
+    cpu_dashmax:el("dev_cpu_dashmax"),
+    cpu_dashrt:el("dev_cpu_dashrt"),
+  };
+
+  function devLoadFromState(){
+    DEV.p1_hpmax.value=String(p1.hpMax);
+    DEV.p1_manamax.value=String(p1.manaMax);
+    DEV.p1_regen.value=String(p1.manaRegen);
+    DEV.regen_delay.value=String(p1.regenDelayAfterSpend);
+
+    DEV.drain_x1.value=String(Drain.x1);
+    DEV.drain_x2.value=String(Drain.x2);
+
+    DEV.p1_rate.value=String(p1.rate);
+    DEV.p1_speed.value=String(p1.speed);
+    DEV.p1_mult.value=String(p1.dpsMult.toFixed(2));
+
+    DEV.dmg_scale_spd1.value=String(damageSpeedScaleProfile.points[0].speed);
+    DEV.dmg_scale_val1.value=String(damageSpeedScaleProfile.points[0].scale);
+    DEV.dmg_scale_spd2.value=String(damageSpeedScaleProfile.points[1].speed);
+    DEV.dmg_scale_val2.value=String(damageSpeedScaleProfile.points[1].scale);
+    DEV.dmg_scale_spd3.value=String(damageSpeedScaleProfile.points[2].speed);
+    DEV.dmg_scale_val3.value=String(damageSpeedScaleProfile.points[2].scale);
+    DEV.dmg_scale_spd4.value=String(damageSpeedScaleProfile.points[3].speed);
+    DEV.dmg_scale_val4.value=String(damageSpeedScaleProfile.points[3].scale);
+
+    DEV.line_hitbox_start_speed.value=String(lineHitboxCfg.startSpeed);
+    DEV.line_hitbox_mode.value=String(lineHitboxCfg.mode);
+    DEV.line_hitbox_straight_factor.value=String(lineHitboxCfg.straightFactor);
+    DEV.line_hitbox_smoother.value=String(lineHitboxCfg.smoother);
+    DEV.line_hitbox_mul_1.value=String(lineHitboxCfg.mul1);
+    DEV.line_hitbox_mul_2.value=String(lineHitboxCfg.mul2);
+    DEV.line_hitbox_mul_3.value=String(lineHitboxCfg.mul3);
+    DEV.line_hitbox_len_1.value=String(lineHitboxCfg.len1);
+    DEV.line_hitbox_len_2.value=String(lineHitboxCfg.len2);
+
+    DEV.block_start_cost.value=String(G.blockStartCost);
+    DEV.block_drain.value=String(G.blockDrain);
+    DEV.block_duration.value=String(G.blockDuration);
+
+    DEV.time_mult.value=String(G.timeMult);
+    DEV.time_duration.value=String(G.timeDuration);
+
+    DEV.size_boost_default.value=G.sizeBoostDefault ? "1" : "0";
+    DEV.size_boost_threshold.value=String(G.sizeBoostThreshold);
+    DEV.size_boost_ref_speed.value=String(G.sizeBoostRefSpeed);
+    DEV.size_boost_scale.value=String(G.sizeBoostScale);
+    DEV.size_boost_mana_mult.value=String(G.sizeBoostManaMult);
+
+    DEV.ctf_enabled.value=ctfCfg.enabled ? "1" : "0";
+    DEV.ctf_pickup_radius.value=String(ctfCfg.pickupRadius);
+    DEV.ctf_base_radius.value=String(ctfCfg.baseRadius);
+    DEV.ctf_pickup_cd.value=String(ctfCfg.pickupCooldown);
+
+    DEV.ball_factor.value=String(G.ballFactor);
+    DEV.ball_life.value=String(G.ballLife);
+
+    DEV.sniper_cost.value=String(G.sniperCost);
+    DEV.sniper_dmg.value=String(G.sniperDamage);
+
+    DEV.molo_cd.value=String(G.moloCd);
+    DEV.molo_spd.value=String(G.moloSpeed);
+    DEV.molo_dps.value=String(G.moloBurnDps);
+
+    DEV.knife_cd.value=String(G.knifeCd);
+    DEV.knife_dist.value=String(G.knifeDist);
+    DEV.knife_dmg.value=String(G.knifeDamage);
+
+    DEV.gren_cd.value=String(G.grenCd);
+    DEV.gren_spd.value=String(G.grenSpeed);
+    DEV.gren_dmg.value=String(G.grenDamage);
+    DEV.gren_rad.value=String(G.grenRadius);
+
+    DEV.tp_time.value=String(G.teleportTime);
+
+    DEV.curve_mix.value=String(curve.mix);
+    DEV.curve_exp.value=String(curve.exp);
+
+    DEV.p1_dashmax.value=String(p1.dashMax);
+    DEV.p1_dashrt.value=String(p1.dashRechargeTime);
+
+    DEV.cpu_hpmax.value=String(cpu.hpMax);
+    DEV.cpu_manamax.value=String(cpu.manaMax);
+    DEV.cpu_regen.value=String(cpu.manaRegen);
+    DEV.cpu_rate.value=String(cpu.rate);
+    DEV.cpu_speed.value=String(cpu.speed);
+    DEV.cpu_mult.value=String(cpu.dpsMult.toFixed(2));
+    DEV.cpu_dashmax.value=String(cpu.dashMax);
+    DEV.cpu_dashrt.value=String(cpu.dashRechargeTime);
+  }
+
+  function applyDevSettings(){
+    curve.mix=clamp(Number(DEV.curve_mix.value)||0.97,0,1);
+    curve.exp=clamp(Number(DEV.curve_exp.value)||1.5,0.2,8);
+
+    p1.regenDelayAfterSpend=clamp(Number(DEV.regen_delay.value)||0.4,0,5);
+    cpu.regenDelayAfterSpend=p1.regenDelayAfterSpend;
+
+    Drain.x1=clamp(Number(DEV.drain_x1.value)||2000,0,1e9);
+    Drain.x2=clamp(Number(DEV.drain_x2.value)||7000,0,1e9);
+
+    damageSpeedScaleProfile.points = [
+      { speed:clamp(Number(DEV.dmg_scale_spd1.value)||700,1,20000), scale:Math.max(0,Number(DEV.dmg_scale_val1.value)||0) },
+      { speed:clamp(Number(DEV.dmg_scale_spd2.value)||1600,1,20000), scale:Math.max(0,Number(DEV.dmg_scale_val2.value)||0) },
+      { speed:clamp(Number(DEV.dmg_scale_spd3.value)||3000,1,20000), scale:Math.max(0,Number(DEV.dmg_scale_val3.value)||0) },
+      { speed:clamp(Number(DEV.dmg_scale_spd4.value)||20000,1,20000), scale:Math.max(0,Number(DEV.dmg_scale_val4.value)||0) }
+    ].sort((a,b)=>a.speed-b.speed);
+
+    lineHitboxCfg.startSpeed=clamp(Number(DEV.line_hitbox_start_speed.value)||2000,1,20000);
+    lineHitboxCfg.mode=clamp(Math.round(Number(DEV.line_hitbox_mode.value)||1),1,2);
+    lineHitboxCfg.straightFactor=Math.max(1, Math.round(Number(DEV.line_hitbox_straight_factor.value)||750));
+    lineHitboxCfg.smoother=clamp(Number(DEV.line_hitbox_smoother.value)||0.005,0.001,1);
+    lineHitboxCfg.mul1=Math.max(0, Number(DEV.line_hitbox_mul_1.value)||0);
+    lineHitboxCfg.mul2=Math.max(0, Number(DEV.line_hitbox_mul_2.value)||0);
+    lineHitboxCfg.mul3=Math.max(0, Number(DEV.line_hitbox_mul_3.value)||0);
+    lineHitboxCfg.len1=clamp(Number(DEV.line_hitbox_len_1.value)||300,1,100000);
+    lineHitboxCfg.len2=Math.max(lineHitboxCfg.len1, clamp(Number(DEV.line_hitbox_len_2.value)||600,1,100000));
+
+    G.blockStartCost=clamp(Number(DEV.block_start_cost.value)||5000,0,1e9);
+    G.blockDrain=clamp(Number(DEV.block_drain.value)||4000,0,1e9);
+    G.blockDuration=clamp(Number(DEV.block_duration.value)||1,0.1,60);
+
+    G.timeMult=Math.max(1, Number(DEV.time_mult.value)||1);
+    G.timeDuration=clamp(Number(DEV.time_duration.value)||10,0.1,120);
+
+    G.sizeBoostDefault=Number(DEV.size_boost_default.value)===1;
+    G.sizeBoostThreshold=clamp(Number(DEV.size_boost_threshold.value)||1800,1,20000);
+    G.sizeBoostRefSpeed=clamp(Number(DEV.size_boost_ref_speed.value)||1600,1,20000);
+    G.sizeBoostScale=Math.max(0.1, Number(DEV.size_boost_scale.value)||1);
+    G.sizeBoostManaMult=Math.max(1, Number(DEV.size_boost_mana_mult.value)||1.3);
+
+    ctfCfg.enabled = Number(DEV.ctf_enabled.value) === 1;
+    ctfCfg.pickupRadius = clamp(Number(DEV.ctf_pickup_radius.value)||36,1,1000);
+    ctfCfg.baseRadius = clamp(Number(DEV.ctf_base_radius.value)||70,1,1000);
+    ctfCfg.pickupCooldown = clamp(Number(DEV.ctf_pickup_cd.value)||10,0,120);
+
+    G.ballFactor=clamp(Number(DEV.ball_factor.value)||0.2,0,5);
+    G.ballLife=clamp(Number(DEV.ball_life.value)||10,0.1,60);
+
+    G.sniperCost=clamp(Number(DEV.sniper_cost.value)||8000,0,1e9);
+    G.sniperDamage=clamp(Number(DEV.sniper_dmg.value)||500,0,1e9);
+
+    G.moloCd=clamp(Number(DEV.molo_cd.value)||10,0,9999);
+    G.moloSpeed=clamp(Number(DEV.molo_spd.value)||500,1,50000);
+    G.moloBurnDps=clamp(Number(DEV.molo_dps.value)||150,0,1e9);
+
+    G.knifeCd=clamp(Number(DEV.knife_cd.value)||10,0,9999);
+    G.knifeDist=clamp(Number(DEV.knife_dist.value)||58,1,800);
+    G.knifeDamage=clamp(Number(DEV.knife_dmg.value)||2000,0,1e9);
+
+    G.grenCd=clamp(Number(DEV.gren_cd.value)||15,0,9999);
+    G.grenSpeed=clamp(Number(DEV.gren_spd.value)||300,1,50000);
+    G.grenDamage=clamp(Number(DEV.gren_dmg.value)||1500,0,1e9);
+    G.grenRadius=clamp(Number(DEV.gren_rad.value)||140,1,1200);
+
+    G.teleportTime=clamp(Number(DEV.tp_time.value)||1,0,10);
+
+    p1.hpMax=clamp(Number(DEV.p1_hpmax.value)||DEFAULTS.hpMax,1,1e9);
+    p1.hp=Math.min(p1.hp,p1.hpMax);
+
+    p1.manaMax=clamp(Number(DEV.p1_manamax.value)||DEFAULTS.manaMax,0,1e9);
+    p1.mana=Math.min(p1.mana,p1.manaMax);
+
+    p1.manaRegen=clamp(Number(DEV.p1_regen.value)||DEFAULTS.manaRegen,0,1e9);
+
+    p1.rate=clamp(Math.round(Number(DEV.p1_rate.value)||DEFAULTS.p1.rate),1,1000);
+    p1.speed=clamp(Math.round(Number(DEV.p1_speed.value)||DEFAULTS.p1.speed),1,20000);
+    p1.dpsMult=clamp(Math.round((Number(DEV.p1_mult.value)||1)*100)/100,1,2);
+
+    p1.dashMax=clamp(Math.round(Number(DEV.p1_dashmax.value)||DEFAULTS.dashMax),0,50);
+    p1.dash=Math.min(p1.dash,p1.dashMax);
+    p1.dashRechargeTime=clamp(Number(DEV.p1_dashrt.value)||DEFAULTS.dashRechargeTime,0.05,60);
+
+    p1.sizeBoostEnabled = G.sizeBoostDefault;
+
+    cpu.hpMax=clamp(Number(DEV.cpu_hpmax.value)||DEFAULTS.hpMax,1,1e9);
+    cpu.hp=Math.min(cpu.hp,cpu.hpMax);
+
+    cpu.manaMax=clamp(Number(DEV.cpu_manamax.value)||DEFAULTS.manaMax,0,1e9);
+    cpu.mana=Math.min(cpu.mana,cpu.manaMax);
+
+    cpu.manaRegen=clamp(Number(DEV.cpu_regen.value)||DEFAULTS.manaRegen,0,1e9);
+
+    cpu.rate=clamp(Math.round(Number(DEV.cpu_rate.value)||DEFAULTS.cpu.rate),1,1000);
+    cpu.speed=clamp(Math.round(Number(DEV.cpu_speed.value)||DEFAULTS.cpu.speed),1,20000);
+    cpu.dpsMult=clamp(Math.round((Number(DEV.cpu_mult.value)||1)*100)/100,1,2);
+
+    cpu.dashMax=clamp(Math.round(Number(DEV.cpu_dashmax.value)||DEFAULTS.dashMax),0,50);
+    cpu.dash=Math.min(cpu.dash,cpu.dashMax);
+    cpu.dashRechargeTime=clamp(Number(DEV.cpu_dashrt.value)||DEFAULTS.dashRechargeTime,0.05,60);
+
+    cpu.sizeBoostEnabled = G.sizeBoostDefault;
+
+    rateInput.value=String(p1.rate);
+    speedInput.value=String(p1.speed);
+    multInput.value=String(p1.dpsMult.toFixed(2));
+    multSlider.value=String(p1.dpsMult);
+
+    rateSlider.value=String(invExpMap(p1.rate,1,1000));
+    speedSlider.value=String(invExpMap(p1.speed,1,20000));
+
+    updateSpellReadouts();
+    updateHUD();
+  }
+
+  function restoreDefaults(){
+    curve.mix=0.97; curve.exp=1.5;
+    Drain.x1=DEFAULTS.drainX1; Drain.x2=DEFAULTS.drainX2;
+
+    Object.assign(G,{
+      knifeCd:DEFAULTS.knifeCd, knifeDist:DEFAULTS.knifeDist, knifeDamage:DEFAULTS.knifeDamage,
+      moloCd:DEFAULTS.moloCd, moloSpeed:DEFAULTS.moloSpeed, moloBurnDps:DEFAULTS.moloBurnDps, moloBurnDuration:DEFAULTS.moloBurnDuration,
+      grenCd:DEFAULTS.grenCd, grenSpeed:DEFAULTS.grenSpeed, grenDamage:DEFAULTS.grenDamage, grenRadius:DEFAULTS.grenRadius,
+      ballFactor:DEFAULTS.ballFactor, ballLife:DEFAULTS.ballLife,
+      sniperCost:DEFAULTS.sniperCost, sniperDamage:DEFAULTS.sniperDamage,
+      blockStartCost:DEFAULTS.blockStartCost, blockDrain:DEFAULTS.blockDrain, blockDuration:DEFAULTS.blockDuration,
+      timeMult:DEFAULTS.timeMult, timeDuration:DEFAULTS.timeDuration,
+      sizeBoostDefault:DEFAULTS.sizeBoostDefault, sizeBoostThreshold:DEFAULTS.sizeBoostThreshold, sizeBoostRefSpeed:DEFAULTS.sizeBoostRefSpeed, sizeBoostScale:DEFAULTS.sizeBoostScale, sizeBoostManaMult:DEFAULTS.sizeBoostManaMult,
+      teleportTime:DEFAULTS.teleportTime
+    });
+
+    damageSpeedScaleProfile.points = DEFAULTS.damageScalePoints.map(p=>({ ...p }));
+    Object.assign(lineHitboxCfg, DEFAULTS.lineHitbox);
+    Object.assign(ctfCfg, DEFAULTS.ctf);
+
+    Object.assign(p1, makePlayer(true));
+    Object.assign(cpu, makePlayer(false));
+    resetFlagHome("p1");
+    resetFlagHome("cpu");
+    flagsState.p1.cooldowns={p1:0,cpu:0};
+    flagsState.cpu.cooldowns={p1:0,cpu:0};
+
+    devLoadFromState();
+    applyDevSettings();
+  }
+
+  el("devApplyBtn").onclick=()=>{ if(!running) applyDevSettings(); };
+  el("devDefaultsBtn").onclick=()=>{ if(!running) restoreDefaults(); };
+
+  function getMoveVecHuman(){
+    let mx=0,my=0;
+    if(keys.has("w")||keys.has("arrowup")) my-=1;
+    if(keys.has("s")||keys.has("arrowdown")) my+=1;
+    if(keys.has("a")||keys.has("arrowleft")) mx-=1;
+    if(keys.has("d")||keys.has("arrowright")) mx+=1;
+    const m=Math.hypot(mx,my);
+    if(m>1e-6){ mx/=m; my/=m; }
+    return {x:mx,y:my};
+  }
+
+  let running=false;
+  let lastT=performance.now();
+
+  function updateCooldowns(dt){
+    for(const pl of [p1,cpu]){
+      pl.shootCd=Math.max(0,pl.shootCd-dt);
+      pl.moloCd=Math.max(0,pl.moloCd-dt);
+      pl.knifeCd=Math.max(0,pl.knifeCd-dt);
+      pl.grenCd=Math.max(0,pl.grenCd-dt);
+      pl.ballCd=Math.max(0,pl.ballCd-dt);
+      pl.timeT=Math.max(0,pl.timeT-dt);
+      rechargeDash(pl,dt);
+    }
+  }
+
+  function updateBalls(dt){
+    for(let i=balls.length-1;i>=0;i--){
+      const b=balls[i];
+      b.life-=dt;
+
+      b.x += b.vx*dt;
+      b.y += b.vy*dt;
+
+      if(b.x - b.r < 0){ b.x=b.r; b.vx*=-1; }
+      if(b.x + b.r > arena.w){ b.x=arena.w-b.r; b.vx*=-1; }
+      if(b.y - b.r < 0){ b.y=b.r; b.vy*=-1; }
+      if(b.y + b.r > arena.h){ b.y=arena.h-b.r; b.vy*=-1; }
+
+      for(const w of walls){
+        if(bulletHitsRect(b,w)){
+          reflectOnRect(b,w);
+          spawnBurst(b.x,b.y,4,140,0.10,28,true);
+          break;
+        }
+      }
+
+      const attacker = b.owner==="p1" ? p1 : cpu;
+      const target = b.owner==="p1" ? cpu : p1;
+
+      if(target.alive && dist(b.x,b.y,target.x,target.y) < b.r + target.r){
+        dealCombatHit(attacker,target,b.dmg);
+        spawnRing(b.x,b.y,32,10,0.16,28);
+        balls.splice(i,1);
+        continue;
+      }
+
+      if(b.life<=0){
+        spawnBurst(b.x,b.y,10,180,0.16,28,true);
+        balls.splice(i,1);
+      }
+    }
+  }
+
+  function bulletLineHitCheck(b){
+    if(!b.lineHitActive || !b.lineHitTriggered || b.lineStopped || b.lineHitConsumed || b.alreadyHitTarget) return false;
+    if(b.lineDelay > 0 || b.lineT <= 0) return false;
+
+    const target=(b.owner==="p1")?cpu:p1;
+    const attacker=(b.owner==="p1")?p1:cpu;
+    if(!target.alive) return false;
+
+    const beamLen=dist(b.lineStartX,b.lineStartY,b.lineEndX,b.lineEndY);
+    const dirX=(b.lineEndX-b.lineStartX)/(beamLen||1);
+    const dirY=(b.lineEndY-b.lineStartY)/(beamLen||1);
+    const along=((target.x-b.lineStartX)*dirX + (target.y-b.lineStartY)*dirY);
+    const d=pointToSegmentDistance(target.x,target.y,b.lineStartX,b.lineStartY,b.lineEndX,b.lineEndY);
+    if(along >= 0 && along <= beamLen + target.r && d <= target.r + Math.max(8,b.r)){
+      dealCombatHit(attacker,target,b.dmg);
+      b.lineHitConsumed=true;
+      b.alreadyHitTarget=true;
+      spawnRing(target.x,target.y,34,12,0.14,210);
+      spawnBurst(target.x,target.y,14,220,0.16,210);
+      return true;
+    }
+    return false;
+  }
+
+  function update(dt){
+    p1.aim=angleTo(p1.x,p1.y, screenToWorldX(mouseX), screenToWorldY(mouseY));
+    updateCooldowns(dt);
+
+    const preset1Held=keys.has("1");
+    if(preset1Held && !flags.oneEdge){ flags.oneEdge=true; setP1Rate(RATE_PRESETS["1"]); }
+    if(!preset1Held) flags.oneEdge=false;
+
+    const preset2Held=keys.has("2");
+    if(preset2Held && !flags.twoEdge){ flags.twoEdge=true; setP1Rate(RATE_PRESETS["2"]); }
+    if(!preset2Held) flags.twoEdge=false;
+
+    const preset3Held=keys.has("3");
+    if(preset3Held && !flags.threeEdge){ flags.threeEdge=true; setP1Rate(RATE_PRESETS["3"]); }
+    if(!preset3Held) flags.threeEdge=false;
+
+    const preset4Held=keys.has("4");
+    if(preset4Held && !flags.fourEdge){ flags.fourEdge=true; setP1Rate(RATE_PRESETS["4"]); }
+    if(!preset4Held) flags.fourEdge=false;
+
+    const preset5Held=keys.has("5");
+    if(preset5Held && !flags.fiveEdge){ flags.fiveEdge=true; setP1Rate(RATE_PRESETS["5"]); }
+    if(!preset5Held) flags.fiveEdge=false;
+
+    const preset6Held=keys.has("6");
+    if(preset6Held && !flags.sixEdge){ flags.sixEdge=true; setP1Rate(RATE_PRESETS["6"]); }
+    if(!preset6Held) flags.sixEdge=false;
+
+    const lHeld=keys.has("l");
+    if(lHeld && !flags.lEdge){ flags.lEdge=true; setP1Speed(SPEED_PRESETS["l"]); }
+    if(!lHeld) flags.lEdge=false;
+
+    const zHeld=keys.has("z");
+    if(zHeld && !flags.zEdge){ flags.zEdge=true; setP1Speed(SPEED_PRESETS["z"]); }
+    if(!zHeld) flags.zEdge=false;
+
+    const xHeld=keys.has("x");
+    if(xHeld && !flags.xEdge){ flags.xEdge=true; setP1Speed(SPEED_PRESETS["x"]); }
+    if(!xHeld) flags.xEdge=false;
+
+    const cHeld=keys.has("c");
+    if(cHeld && !flags.cEdge){ flags.cEdge=true; setP1Speed(SPEED_PRESETS["c"]); }
+    if(!cHeld) flags.cEdge=false;
+
+    const vHeld=keys.has("v");
+    if(vHeld && !flags.vEdge){ flags.vEdge=true; setP1Speed(SPEED_PRESETS["v"]); }
+    if(!vHeld) flags.vEdge=false;
+
+    const bHeld=keys.has("b");
+    if(bHeld && !flags.bEdge){ flags.bEdge=true; setP1Speed(SPEED_PRESETS["b"]); }
+    if(!bHeld) flags.bEdge=false;
+
+    const nHeld=keys.has("n");
+    if(nHeld && !flags.nEdge){ flags.nEdge=true; setP1Speed(SPEED_PRESETS["n"]); }
+    if(!nHeld) flags.nEdge=false;
+
+    const mHeld=keys.has("m");
+    if(mHeld && !flags.mEdge){ flags.mEdge=true; setP1Speed(SPEED_PRESETS["m"]); }
+    if(!mHeld) flags.mEdge=false;
+
+    const uHeld=keys.has("u");
+    if(uHeld && !flags.uEdge){
+      flags.uEdge=true;
+      p1.sizeBoostEnabled=!p1.sizeBoostEnabled;
+      updateSpellReadouts();
+    }
+    if(!uHeld) flags.uEdge=false;
+
+    const qHeld=keys.has("q");
+    if(qHeld && !flags.qEdge){
+      flags.qEdge=true;
+      setP1Mult((Math.abs(p1.dpsMult-2)<1e-6) ? 1 : 2);
+    }
+    if(!qHeld) flags.qEdge=false;
+
+    const rHeld=keys.has("r");
+    if(rHeld && !flags.rEdge){
+      flags.rEdge=true;
+      if(p1.alive) activateTimeLever(p1);
+    }
+    if(!rHeld) flags.rEdge=false;
+
+    updateTeleport(p1,dt);
+    const p1Teleporting = (p1.tpT>0);
+
+    const mv=p1Teleporting ? {x:0,y:0} : getMoveVecHuman();
+
+    const ctrlHeld=keys.has("control");
+    updateBlock(p1, ctrlHeld && p1.alive && !p1Teleporting, dt);
+
+    const moveSpeed=360;
+    p1.vx=lerp(p1.vx, mv.x*moveSpeed, dt*12);
+    p1.vy=lerp(p1.vy, mv.y*moveSpeed, dt*12);
+    p1.vx*= (1-dt*2.4);
+    p1.vy*= (1-dt*2.4);
+    p1.x+=p1.vx*dt; p1.y+=p1.vy*dt;
+    resolveWallsForPlayer(p1);
+
+    const shiftHeld=keys.has("shift");
+    if(shiftHeld && !flags.shiftEdge){ flags.shiftEdge=true; if(!p1Teleporting) dashForward(p1,mv.x,mv.y); }
+    if(!shiftHeld) flags.shiftEdge=false;
+
+    const spaceHeld=keys.has(" ");
+    if(spaceHeld && !flags.spaceEdge){ flags.spaceEdge=true; if(p1.alive && !p1Teleporting) triggerKnives(p1); }
+    if(!spaceHeld) flags.spaceEdge=false;
+
+    if(rmb && !flags.rmbEdge){ flags.rmbEdge=true; if(p1.alive && !p1Teleporting) fireMolotov(p1,p1.aim); }
+    if(!rmb) flags.rmbEdge=false;
+
+    const gHeld=keys.has("g");
+    if(gHeld && !flags.gEdge){
+      flags.gEdge=true;
+      if(p1.alive && !p1Teleporting){
+        const tx=screenToWorldX(mouseX);
+        const ty=screenToWorldY(mouseY);
+        throwGrenade(p1, tx, ty);
+      }
+    }
+    if(!gHeld) flags.gEdge=false;
+
+    const eHeld=keys.has("e");
+    if(eHeld && p1.alive && !p1Teleporting && !p1.blocking){
+      fireBall(p1, p1.aim);
+    }
+
+    const fHeld=keys.has("f");
+    if(fHeld && !flags.fEdge){
+      flags.fEdge=true;
+      if(p1.alive && !p1Teleporting) fireSniper(p1, p1.aim);
+    }
+    if(!fHeld) flags.fEdge=false;
+
+    const tHeld=keys.has("t");
+    if(tHeld && !flags.tEdge){
+      flags.tEdge=true;
+      if(p1.alive && !p1Teleporting){
+        const tx=screenToWorldX(mouseX);
+        const ty=screenToWorldY(mouseY);
+        attemptTeleport(p1, tx, ty);
+      }
+    }
+    if(!tHeld) flags.tEdge=false;
+
+    const p1Spending = !p1Teleporting && !p1.blocking && lmb && p1.alive && p1.mana>10;
+    updateMana(p1,dt,p1Spending);
+    if(p1Spending) fireAttack(p1,p1.aim);
+
+    updateCpuAI(dt);
+    const cpuMoveSpeed=340;
+    cpu.vx=lerp(cpu.vx, cpu.ai.desiredDir.x*cpuMoveSpeed, dt*10);
+    cpu.vy=lerp(cpu.vy, cpu.ai.desiredDir.y*cpuMoveSpeed, dt*10);
+    cpu.vx*=(1-dt*2.2);
+    cpu.vy*=(1-dt*2.2);
+    cpu.x+=cpu.vx*dt; cpu.y+=cpu.vy*dt;
+    resolveWallsForPlayer(cpu);
+
+    const cpuCanSee=hasLineOfSight(cpu.x,cpu.y,p1.x,p1.y);
+    const cpuWantsToShoot=cpuCanSee && Math.random()<cpu.ai.aggression;
+    const cpuSpending=cpuWantsToShoot && cpu.alive && cpu.mana>10 && !cpu.blocking;
+    updateMana(cpu,dt,cpuSpending);
+    if(cpuSpending) fireAttack(cpu,cpu.aim);
+
+    for(let i=bullets.length-1;i>=0;i--){
+      const b=bullets[i];
+      b.prevX=b.x; b.prevY=b.y;
+      b.x+=b.vx*dt; b.y+=b.vy*dt;
+      b.traveled += dist(b.prevX,b.prevY,b.x,b.y);
+
+      if(b.lineHitActive && !b.lineStopped){
+        if(!b.lineHitTriggered){
+          const ang=Math.atan2(b.vy,b.vx);
+          b.lineStartX = (lineHitboxCfg.mode===2) ? b.originX : b.prevX;
+          b.lineStartY = (lineHitboxCfg.mode===2) ? b.originY : b.prevY;
+
+          if(lineHitboxCfg.mode===2){
+            const end = raycastBeamEnd(b.originX,b.originY,ang,5000);
+            b.lineEndX=end.x;
+            b.lineEndY=end.y;
+            b.lineStopped=end.hitWall;
+            b.lineDelay=computeLineHitboxDelay(Math.hypot(b.vx,b.vy), b.traveled);
+            b.lineDuration=computeLineHitboxDuration(Math.hypot(b.vx,b.vy), b.traveled);
+            b.lineT=b.lineDuration;
+          }else{
+            const end = raycastBeamEnd(b.prevX,b.prevY,ang,Math.max(0, b.traveled));
+            b.lineEndX=end.x;
+            b.lineEndY=end.y;
+            b.lineStopped=end.hitWall;
+            b.lineDelay=computeLineHitboxDelay(Math.hypot(b.vx,b.vy), b.traveled);
+            b.lineDuration=computeLineHitboxDuration(Math.hypot(b.vx,b.vy), b.traveled);
+            b.lineT=b.lineDuration;
+          }
+
+          b.lineHitTriggered=true;
+        }else{
+          if(b.lineDelay>0) b.lineDelay=Math.max(0,b.lineDelay-dt);
+          else b.lineT=Math.max(0,b.lineT-dt);
+          bulletLineHitCheck(b);
+        }
+      }
+
+      if(b.x<0||b.y<0||b.x>arena.w||b.y>arena.h){
+        spawnBurst(b.x,b.y,10,200,0.16,210,true);
+        bullets.splice(i,1);
+        continue;
+      }
+
+      let wallHit=null;
+      for(const w of walls){ if(bulletHitsRect(b,w)){ wallHit=w; break; } }
+      if(wallHit){
+        spawnBurst(b.x,b.y,10,200,0.16,210,true);
+        bullets.splice(i,1);
+        continue;
+      }
+
+      const target=(b.owner==="p1")?cpu:p1;
+      const attacker=(b.owner==="p1")?p1:cpu;
+      if(target.alive && !b.alreadyHitTarget && dist(b.x,b.y,target.x,target.y) < b.r + target.r){
+        dealCombatHit(attacker,target,b.dmg);
+        b.alreadyHitTarget=true;
+        bullets.splice(i,1);
+        continue;
+      }
+    }
+
+    for(let i=molotovs.length-1;i>=0;i--){
+      const m=molotovs[i];
+      m.x+=m.vx*dt; m.y+=m.vy*dt;
+      m.spin+=dt*4.5;
+
+      if(m.x<0||m.y<0||m.x>arena.w||m.y>arena.h){
+        spawnBurst(m.x,m.y,18,240,0.22,55,true);
+        molotovs.splice(i,1);
+        continue;
+      }
+
+      let wall=false;
+      for(const w of walls){
+        const cx=clamp(m.x,w.x,w.x+w.w);
+        const cy=clamp(m.y,w.y,w.y+w.h);
+        const dx=m.x-cx, dy=m.y-cy;
+        if(dx*dx+dy*dy < m.r*m.r){ wall=true; break; }
+      }
+      if(wall){
+        spawnRing(m.x,m.y,34,12,0.18,55);
+        spawnBurst(m.x,m.y,22,260,0.22,55,true);
+        molotovs.splice(i,1);
+        continue;
+      }
+
+      const target=(m.owner==="p1")?cpu:p1;
+      if(target.alive && dist(m.x,m.y,target.x,target.y) <= target.r + m.r){
+        applyBurn(target, G.moloBurnDps, G.moloBurnDuration);
+        spawnRing(m.x,m.y,44,16,0.18,55);
+        spawnBurst(m.x,m.y,28,300,0.22,55,true);
+        molotovs.splice(i,1);
+        continue;
+      }
+      if(Math.random()<0.25) spawnBurst(m.x,m.y,1,40,0.10,55,true);
+    }
+
+    updateBalls(dt);
+    updateGrenades(dt);
+    updateKnifeBursts(dt);
+    updateSniperBeams(dt);
+    updateParticles(dt);
+    updateStatus(p1,dt);
+    updateStatus(cpu,dt);
+    updateFlags(dt);
+
+    const vp=gameplayViewport();
+    cam.x=lerp(cam.x,(p1.x+cpu.x)/2,dt*3);
+    cam.y=lerp(cam.y,(p1.y+cpu.y)/2,dt*3);
+    cam.x=clamp(cam.x,vp.w/2,arena.w-vp.w/2);
+    cam.y=clamp(cam.y,vp.h/2,arena.h-vp.h/2);
+
+    cam.shake=Math.max(0,cam.shake-dt*18);
+    cam.sx=rand(cam.shake,-cam.shake);
+    cam.sy=rand(cam.shake,-cam.shake);
+
+    if(!p1.alive || !cpu.alive){
+      running=false;
+      setTimeout(()=>{
+        alert(p1.alive ? "You Win!" : "You Lose!");
+        menu.classList.remove("hidden");
+        resetMatch(true);
+      },10);
+    }
+
+    updateHUD();
+  }
+
+  function loop(now){
+    const dt=clamp((now-lastT)/1000,0,0.033);
+    lastT=now;
+    if(running) update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function resetMatch(toMenu=false){
+    bullets.length=0; balls.length=0; molotovs.length=0; grenades.length=0; particles.length=0; knifeBursts.length=0; sniperBeams.length=0;
+
+    p1.x=360; p1.y=arena.h/2; p1.vx=p1.vy=0;
+    p1.hp=p1.hpMax; p1.alive=true;
+    p1.mana=p1.manaMax; p1.regenDelayT=0; p1.wasSpending=false;
+    p1.dash=p1.dashMax; p1.dashRechargeT=0;
+    p1.shootCd=0; p1.moloCd=0; p1.knifeCd=0; p1.grenCd=0; p1.ballCd=0;
+    p1.tpT=0; p1.tpMax=G.teleportTime; p1.tpTx=0; p1.tpTy=0;
+    p1.blocking=false; p1.blockT=0; p1.blockUnlocked=true;
+    p1.timeT=0;
+    p1.sizeBoostEnabled=G.sizeBoostDefault;
+    p1.status.burnT=0; p1.status.burnDps=0; p1.status.timeT=0; p1.status.timeDps=0;
+
+    cpu.x=arena.w-360; cpu.y=arena.h/2; cpu.vx=cpu.vy=0;
+    cpu.hp=cpu.hpMax; cpu.alive=true;
+    cpu.mana=cpu.manaMax; cpu.regenDelayT=0; cpu.wasSpending=false;
+    cpu.dash=cpu.dashMax; cpu.dashRechargeT=0;
+    cpu.shootCd=0; cpu.moloCd=0; cpu.knifeCd=0; cpu.grenCd=0; cpu.ballCd=0;
+    cpu.tpT=0; cpu.tpMax=G.teleportTime; cpu.tpTx=0; cpu.tpTy=0;
+    cpu.blocking=false; cpu.blockT=0; cpu.blockUnlocked=true;
+    cpu.timeT=0;
+    cpu.sizeBoostEnabled=G.sizeBoostDefault;
+    cpu.status.burnT=0; cpu.status.burnDps=0; cpu.status.timeT=0; cpu.status.timeDps=0;
+
+    resetFlagHome("p1");
+    resetFlagHome("cpu");
+    flagsState.p1.cooldowns={p1:0,cpu:0};
+    flagsState.cpu.cooldowns={p1:0,cpu:0};
+
+    applyDifficulty();
+    updateSpellReadouts();
+    updateHUD();
+
+    running=!toMenu;
+    menu.classList.toggle("hidden", !toMenu);
+    if(toMenu) devLoadFromState();
+  }
+
+  function startMatch(){
+    applyDevSettings();
+    running=true;
+    menu.classList.add("hidden");
+    resetMatch(false);
+  }
+
+  bindSliders();
+  diffKey=difficultySel.value;
+  applyDifficulty();
+
+  rateSlider.value=String(invExpMap(p1.rate,1,1000));
+  speedSlider.value=String(invExpMap(p1.speed,1,20000));
+  devLoadFromState();
+  updateSpellReadouts();
+  resetMatch(true);
+
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
