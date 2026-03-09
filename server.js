@@ -55,6 +55,10 @@ function makePlayerState(id, slot) {
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
 
+  socket.on("pingCheck", (sentAt) => {
+  socket.emit("pongCheck", sentAt);
+});
+
   if (waitingPlayer && waitingPlayer.connected) {
     const roomId = `match_${waitingPlayer.id}_${socket.id}`;
     const p1 = makePlayerState(waitingPlayer.id, 1);
