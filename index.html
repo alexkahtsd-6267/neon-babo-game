@@ -3068,6 +3068,9 @@ CTF mode: ${ctfOn}. Pickup radius: ${ctfCfg.pickupRadius}px. Base radius: ${ctfC
   cpu.alive = enemyPlayer.alive;
   */
 }
+    if (enemyPlayer && enemyPlayer.shooting) {
+  fireAttack(cpu, cpu.aim);
+}
 
     for(let i=bullets.length-1;i>=0;i--){
       const b=bullets[i];
@@ -3207,6 +3210,7 @@ if (roomId && myPlayer) {
     hp: p1.hp,
     mana: p1.mana,
     alive: p1.alive
+    shooting: lmb && !p1.blocking && p1.alive && p1.mana > 10
   }
 });
 }   
