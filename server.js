@@ -41,10 +41,14 @@ function makePlayerState(id, slot) {
     id,
     slot,
     x: slot === 1 ? 360 : 1840,
+    vx: 0,
+    vy: 0,
+    aim: 0,
     y: 700,
     hp: 3000,
     // Should likely change hp to 6000 or have them set to the same as other character is set on Dev settings
     mana: 10000
+    alive: true
   };
 }
 
