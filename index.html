@@ -1820,6 +1820,7 @@ Time Damage (R):
   }
 
   function updateCpuAI(dt){
+   
     if(!cpu.alive || !p1.alive) return;
     cpu.ai.lastDecision += dt;
     const canSee=hasLineOfSight(cpu.x,cpu.y,p1.x,p1.y);
@@ -3019,7 +3020,8 @@ CTF mode: ${ctfOn}. Pickup radius: ${ctfCfg.pickupRadius}px. Base radius: ${ctfC
     const p1Spending = !p1Teleporting && !p1.blocking && lmb && p1.alive && p1.mana>10;
     updateMana(p1,dt,p1Spending);
     if(p1Spending) fireAttack(p1,p1.aim);
-
+ 
+    /*
     updateCpuAI(dt);
     const cpuMoveSpeed=340;
     cpu.vx=lerp(cpu.vx, cpu.ai.desiredDir.x*cpuMoveSpeed, dt*10);
@@ -3034,6 +3036,18 @@ CTF mode: ${ctfOn}. Pickup radius: ${ctfCfg.pickupRadius}px. Base radius: ${ctfC
     const cpuSpending=cpuWantsToShoot && cpu.alive && cpu.mana>10 && !cpu.blocking;
     updateMana(cpu,dt,cpuSpending);
     if(cpuSpending) fireAttack(cpu,cpu.aim);
+    */
+
+    if (enemyPlayer) {
+  cpu.x = enemyPlayer.x;
+  cpu.y = enemyPlayer.y;
+  cpu.vx = enemyPlayer.vx || 0;
+  cpu.vy = enemyPlayer.vy || 0;
+  cpu.aim = enemyPlayer.aim || 0;
+  cpu.hp = enemyPlayer.hp;
+  cpu.mana = enemyPlayer.mana;
+  cpu.alive = enemyPlayer.alive;
+}
 
     for(let i=bullets.length-1;i>=0;i--){
       const b=bullets[i];
@@ -3161,6 +3175,19 @@ CTF mode: ${ctfOn}. Pickup radius: ${ctfCfg.pickupRadius}px. Base radius: ${ctfC
       },10);
     }
 
+if (roomId && myPlayer) {
+  socket.emit("playerUpdate", {
+    roomId,
+    x: p1.x,
+    y: p1.y,
+    vx: p1.vx,
+    vy: p1.vy,
+    aim: p1.aim,
+    hp: p1.hp,
+    mana: p1.mana,
+    alive: p1.alive
+  });
+}   
     updateHUD();
   }
 
