@@ -34,6 +34,8 @@ const io = new Server(server, {
 let waitingPlayer = null;
 const matches = new Map();
 
+
+
 function makePlayerState(id, slot) {
   return {
     id,
@@ -41,6 +43,7 @@ function makePlayerState(id, slot) {
     x: slot === 1 ? 360 : 1840,
     y: 700,
     hp: 3000,
+    // Should likely change hp to 6000 or have them set to the same as other character is set on Dev settings
     mana: 10000
   };
 }
