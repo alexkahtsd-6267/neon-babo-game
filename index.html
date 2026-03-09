@@ -642,6 +642,24 @@ socket.on("matchFound", (data) => {
   enemyPlayer = data.enemy;
 
   console.log("Match found!", data);
+
+  p1.x = myPlayer.x;
+p1.y = myPlayer.y;
+p1.vx = myPlayer.vx || 0;
+p1.vy = myPlayer.vy || 0;
+p1.aim = myPlayer.aim || 0;
+p1.hp = myPlayer.hp;
+p1.mana = myPlayer.mana;
+p1.alive = myPlayer.alive !== false;
+
+cpu.x = enemyPlayer.x;
+cpu.y = enemyPlayer.y;
+cpu.vx = enemyPlayer.vx || 0;
+cpu.vy = enemyPlayer.vy || 0;
+cpu.aim = enemyPlayer.aim || 0;
+cpu.hp = enemyPlayer.hp;
+cpu.mana = enemyPlayer.mana;
+cpu.alive = enemyPlayer.alive !== false;
 });
 
 socket.on("enemyUpdate", (enemyState) => {
