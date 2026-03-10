@@ -87,7 +87,7 @@ const DEFAULTS = {
   ],
 
   ctf: {
-    enabled: false,
+    enabled: true,
     pickupRadius: 36,
     baseRadius: 70,
     pickupCooldown: 10,
