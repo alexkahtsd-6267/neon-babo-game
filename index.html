@@ -307,7 +307,7 @@
       <div class="controlsPanel">
         <div class="title">Controls</div>
         <div class="tiny" style="margin-top:6px; line-height:1.5">
-          WASD move · Shift dash · Left click attack · E ball · Right click molotov · Space knives · G grenade · F sniper · T teleport · Ctrl block · R time buff · U size boost
+          WASD move · Shift dash · Left click attack · R ball · Right click molotov · Space knives · G grenade · F sniper · T teleport · E block · Y time buff · U size boost
         </div>
 
         <div class="grid">
@@ -375,14 +375,14 @@
           WASD move<br>
           Shift dash<br>
           Left click attack<br>
-          E bouncing ball<br>
+          R bouncing ball<br>
           Right click molotov<br>
           Space knives<br>
           G grenade<br>
           F sniper<br>
           T teleport<br>
-          Ctrl block<br>
-          R time buff<br>
+          E block<br>
+          Y time buff<br>
           U size boost
         </div>
         <div class="buttons">
@@ -950,13 +950,13 @@
           right: keys.has("d") || keys.has("arrowright"),
           aim: local.aim,
           fire: lmb,
-          block: keys.has("control"),
-          ball: keys.has("e"),
+          block: keys.has("e"),
+          ball: keys.has("r"),
           dashPressed: keys.has("shift"),
           teleportPressed: keys.has("t"),
           teleportX: screenToWorldX(mouseX),
           teleportY: screenToWorldY(mouseY),
-          timePressed: keys.has("r"),
+          timePressed: keys.has("y"),
           sizeBoostTogglePressed: keys.has("u"),
           grenadePressed: keys.has("g"),
           grenadeX: screenToWorldX(mouseX),
