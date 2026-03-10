@@ -2,18 +2,18 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { Server } = require("socket.io");
+const { createServerGame } = require("./serverGame");
 
 const PORT = process.env.PORT || 3000;
 
-const server = http.createServer((req, res) => {
-  if (req.url === "/favicon.ico") {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
+const MIME_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+};
 
-  const filePath = path.join(__dirname, "index.html");
-
+function serveFile(res, filePath) {
   fs.readFile(filePath, (err, content) => {
     if (err) {
       console.error("Read error:", err);
@@ -22,100 +22,108 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = MIME_TYPES[ext] || "application/octet-stream";
+    res.writeHead(200, { "Content-Type": contentType });
     res.end(content);
   });
+}
+
+const server = http.createServer((req, res) => {
+  if (req.url === "/favicon.ico") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  let filePath = path.join(__dirname, "index.html");
+
+  if (req.url === "/clientNet.js") {
+    filePath = path.join(__dirname, "clientNet.js");
+  } else if (req.url === "/shared.js") {
+    filePath = path.join(__dirname, "shared.js");
+  } else if (req.url === "/serverGame.js") {
+    filePath = path.join(__dirname, "serverGame.js");
+  }
+
+  serveFile(res, filePath);
 });
 
 const io = new Server(server, {
-  cors: { origin: "*" }
+  cors: { origin: "*" },
 });
 
 let waitingPlayer = null;
 const matches = new Map();
+const socketToRoom = new Map();
 
+function clearWaitingPlayerIfMatches(socketId) {
+  if (waitingPlayer && waitingPlayer.id === socketId) {
+    waitingPlayer = null;
+  }
+}
 
-
-function makePlayerState(id, slot) {
-  return {
-    id,
-    slot,
-    x: slot === 1 ? 360 : 1840,
-    vx: 0,
-    vy: 0,
-    aim: 0,
-    y: 700,
-    hp: 3000,
-    // Should likely change hp to 6000 or have them set to the same as other character is set on Dev settings
-    mana: 10000,
-    alive: true
-  };
+function makeRoomId(a, b) {
+  return `match_${a}_${b}`;
 }
 
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
 
   socket.on("pingCheck", (sentAt) => {
-  socket.emit("pongCheck", sentAt);
-});
+    socket.emit("pongCheck", sentAt);
+  });
 
-  if (waitingPlayer && waitingPlayer.connected) {
-    const roomId = `match_${waitingPlayer.id}_${socket.id}`;
-    const p1 = makePlayerState(waitingPlayer.id, 1);
-    const p2 = makePlayerState(socket.id, 2);
-
-    matches.set(roomId, {
-      roomId,
-      players: {
-        [waitingPlayer.id]: p1,
-        [socket.id]: p2
-      }
-    });
+  if (waitingPlayer && waitingPlayer.connected && waitingPlayer.id !== socket.id) {
+    const roomId = makeRoomId(waitingPlayer.id, socket.id);
 
     waitingPlayer.join(roomId);
     socket.join(roomId);
 
-    waitingPlayer.emit("matchFound", {
-      roomId,
-      you: p1,
-      enemy: p2
-    });
+    const game = createServerGame(io, roomId, waitingPlayer.id, socket.id);
+    matches.set(roomId, game);
+    socketToRoom.set(waitingPlayer.id, roomId);
+    socketToRoom.set(socket.id, roomId);
 
-    socket.emit("matchFound", {
-      roomId,
-      you: p2,
-      enemy: p1
-    });
+    waitingPlayer.emit("matchFound", game.getMatchFoundPayload(waitingPlayer.id));
+    socket.emit("matchFound", game.getMatchFoundPayload(socket.id));
 
+    game.start();
     waitingPlayer = null;
   } else {
     waitingPlayer = socket;
     socket.emit("queueStatus", { message: "Waiting for opponent..." });
   }
 
-  socket.on("playerUpdate", ({ roomId, state }) => {
-    const match = matches.get(roomId);
-    if (!match || !match.players[socket.id]) return;
+  socket.on("inputUpdate", ({ roomId, input }) => {
+    const knownRoomId = socketToRoom.get(socket.id);
+    if (!knownRoomId) return;
+    if (roomId !== knownRoomId) return;
 
-    match.players[socket.id] = {
-      ...match.players[socket.id],
-      ...state
-    };
+    const game = matches.get(knownRoomId);
+    if (!game) return;
 
-    socket.to(roomId).emit("enemyUpdate", match.players[socket.id]);
+    game.setInput(socket.id, input || {});
   });
 
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
 
-    if (waitingPlayer && waitingPlayer.id === socket.id) {
-      waitingPlayer = null;
-    }
+    clearWaitingPlayerIfMatches(socket.id);
 
-    for (const [roomId, match] of matches.entries()) {
-      if (match.players[socket.id]) {
-        socket.to(roomId).emit("opponentLeft");
+    const roomId = socketToRoom.get(socket.id);
+    if (roomId) {
+      const game = matches.get(roomId);
+      if (game) {
+        game.onDisconnect(socket.id);
+        game.stop();
         matches.delete(roomId);
+      }
+
+      for (const [otherSocketId, otherRoomId] of socketToRoom.entries()) {
+        if (otherRoomId === roomId) {
+          socketToRoom.delete(otherSocketId);
+        }
       }
     }
   });
