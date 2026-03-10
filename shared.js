@@ -56,7 +56,7 @@ const DEFAULTS = {
   sniperCost: 8000,
   sniperDamage: 500,
 
-  blockStartCost: 5000,
+  blockStartCost: 1,
   blockDrain: 4000,
   blockDuration: 1,
 
