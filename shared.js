@@ -28,7 +28,7 @@ const FLAG_BASES = {
 };
 
 const DEFAULTS = {
-  hpMax: 3000,
+  hpMax: 6000,
   manaMax: 10000,
   manaRegen: 1500,
   regenDelayAfterSpend: 0.4,
