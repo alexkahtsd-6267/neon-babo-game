@@ -477,7 +477,10 @@
       let running = false;
       let lastT = performance.now();
 
-      const keys = new Set();
+     const keys = new Set();
+      const edgeState = {
+        q: false
+      };
       let mouseX = W / 2;
       let mouseY = H / 2;
       let lmb = false;
