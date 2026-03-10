@@ -924,6 +924,16 @@
       function update(dt) {
         const me = getMyPlayer();
         const enemy = getEnemyPlayer();
+        
+                const qHeld = keys.has("q");
+        if (qHeld && !edgeState.q) {
+          edgeState.q = true;
+          local.dpsMult = Math.abs(local.dpsMult - 2) < 0.001 ? 1 : 2;
+          updateReadouts();
+        }
+        if (!qHeld) {
+          edgeState.q = false;
+        }
 
         if (me) {
           local.x = me.x;
