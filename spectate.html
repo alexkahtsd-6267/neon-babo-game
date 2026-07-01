@@ -217,7 +217,7 @@
   <div class="hud">
     <div class="top">
       <div class="panel">
-        <div class="title">Spectator Mode</div>
+        <div class="title">Spectator Mode v3 Smooth</div>
         <div class="tiny" id="spectatorStatus" style="margin-top:5px">Connecting...</div>
 
         <div style="margin-top:4px">
@@ -357,6 +357,8 @@
       const p1ManaText = el("p1ManaText");
       const p2ManaText = el("p2ManaText");
 
+      let targetSnapshot = null;
+      let smoothSnapshot = null;
       let latestSnapshot = null;
       let latestTrainingStatus = null;
       let latestMeta = null;
@@ -374,6 +376,91 @@
         if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
         if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
         return String(Math.floor(n));
+      }
+
+      function cloneSnapshot(snapshot) {
+        return snapshot ? JSON.parse(JSON.stringify(snapshot)) : null;
+      }
+
+      function lerpAngle(a, b, t) {
+        let diff = b - a;
+
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+
+        return a + diff * t;
+      }
+
+      function smoothNumber(current, target, alpha) {
+        if (!Number.isFinite(current)) return target;
+        if (!Number.isFinite(target)) return current;
+        return current + (target - current) * alpha;
+      }
+
+      function smoothPlayer(current, target, alpha) {
+        if (!current) return cloneSnapshot(target);
+        if (!target) return current;
+
+        return {
+          ...target,
+          x: smoothNumber(current.x, target.x, alpha),
+          y: smoothNumber(current.y, target.y, alpha),
+          aim: lerpAngle(current.aim || 0, target.aim || 0, alpha),
+          hp: smoothNumber(current.hp, target.hp, alpha),
+          mana: smoothNumber(current.mana, target.mana, alpha),
+        };
+      }
+
+      function smoothArray(currentArr = [], targetArr = [], alpha) {
+        return targetArr.map((target, index) => {
+          const current = currentArr[index];
+
+          if (!current) return cloneSnapshot(target);
+
+          return {
+            ...target,
+            x: smoothNumber(current.x, target.x, alpha),
+            y: smoothNumber(current.y, target.y, alpha),
+            spin: target.spin !== undefined
+              ? smoothNumber(current.spin || 0, target.spin || 0, alpha)
+              : target.spin,
+          };
+        });
+      }
+
+      function updateSmoothSnapshot(dt) {
+        if (!targetSnapshot) return;
+
+        if (!smoothSnapshot) {
+          smoothSnapshot = cloneSnapshot(targetSnapshot);
+          latestSnapshot = smoothSnapshot;
+          return;
+        }
+
+        const alpha = 1 - Math.exp(-dt * 18);
+
+        const next = {
+          ...targetSnapshot,
+          players: {},
+          bullets: smoothArray(smoothSnapshot.bullets || [], targetSnapshot.bullets || [], alpha),
+          balls: smoothArray(smoothSnapshot.balls || [], targetSnapshot.balls || [], alpha),
+          molotovs: smoothArray(smoothSnapshot.molotovs || [], targetSnapshot.molotovs || [], alpha),
+          grenades: smoothArray(smoothSnapshot.grenades || [], targetSnapshot.grenades || [], alpha),
+          knifeBursts: targetSnapshot.knifeBursts || [],
+          sniperBeams: targetSnapshot.sniperBeams || [],
+          flags: targetSnapshot.flags || smoothSnapshot.flags,
+        };
+
+        for (const [socketId, targetPlayer] of Object.entries(targetSnapshot.players || {})) {
+          next.players[socketId] = smoothPlayer(
+            smoothSnapshot.players?.[socketId],
+            targetPlayer,
+            alpha
+          );
+        }
+
+        smoothSnapshot = next;
+        latestSnapshot = smoothSnapshot;
       }
 
       function worldToScreen(x, y) {
@@ -778,9 +865,14 @@
       }
 
       function receiveSnapshot(snapshot) {
-        latestSnapshot = snapshot;
+        targetSnapshot = snapshot;
 
-        if (latestSnapshot) {
+        if (!smoothSnapshot) {
+          smoothSnapshot = cloneSnapshot(snapshot);
+          latestSnapshot = smoothSnapshot;
+        }
+
+        if (targetSnapshot) {
           centerMsg.classList.add("hidden");
         }
 
@@ -792,6 +884,7 @@
 
         lastT = now;
 
+        updateSmoothSnapshot(dt);
         updateCamera(dt);
         updateHUD();
         draw();
