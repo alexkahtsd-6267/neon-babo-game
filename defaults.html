@@ -7,337 +7,433 @@
 
   <style>
     :root {
-      --bg: #070915;
-      --panel: rgba(255,255,255,.07);
-      --line: rgba(255,255,255,.14);
-      --text: #e9ecff;
-      --muted: #b7bddb;
-      --accent: #7aa7ff;
-      --bad: #ff5c7c;
-      --good: #5cffc1;
+      --bg:#080b18;
+      --panel:#171b2a;
+      --panel2:#202536;
+      --text:#eef2ff;
+      --muted:#b9c2e6;
+      --line:rgba(255,255,255,.13);
+      --accent:#8aa8ff;
+      --good:#5cffc1;
+      --bad:#ff5c7c;
+    }
+
+    * {
+      box-sizing:border-box;
     }
 
     body {
-      margin: 0;
-      min-height: 100vh;
-      background:
-        radial-gradient(900px 700px at 20% 10%, rgba(122,167,255,.18), transparent 55%),
-        radial-gradient(800px 700px at 80% 20%, rgba(176,122,255,.14), transparent 55%),
-        var(--bg);
-      color: var(--text);
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-      padding: 24px;
-      box-sizing: border-box;
-    }
-
-    .wrap {
-      max-width: 1100px;
-      margin: 0 auto;
+      margin:0;
+      padding:34px;
+      background:var(--bg);
+      color:var(--text);
+      font-family:system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
     h1 {
-      margin: 0 0 6px;
-      font-size: 30px;
+      margin:0 0 12px;
+      font-size:36px;
+      letter-spacing:.4px;
     }
 
     p {
-      color: var(--muted);
-      margin-top: 0;
-      line-height: 1.5;
+      color:var(--muted);
+      font-size:18px;
+      margin:0 0 28px;
     }
 
-    .topbar {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      align-items: center;
-      margin: 18px 0;
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: var(--panel);
-      backdrop-filter: blur(12px);
+    .toolbar {
+      display:flex;
+      gap:14px;
+      align-items:center;
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:24px;
+      padding:22px;
+      margin-bottom:28px;
+      flex-wrap:wrap;
     }
 
     button {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 11px 14px;
-      background: linear-gradient(180deg, rgba(122,167,255,.22), rgba(122,167,255,.07));
-      color: var(--text);
-      font-weight: 800;
-      cursor: pointer;
+      background:#2b334b;
+      color:var(--text);
+      border:1px solid rgba(255,255,255,.14);
+      padding:14px 20px;
+      border-radius:14px;
+      font-weight:900;
+      font-size:16px;
+      cursor:pointer;
     }
 
-    button.secondary {
-      background: rgba(255,255,255,.06);
-      color: var(--muted);
+    button:hover {
+      filter:brightness(1.12);
     }
 
-    input {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 8px 10px;
-      background: rgba(0,0,0,.22);
-      color: var(--text);
-      font-weight: 700;
+    .primary {
+      background:#344263;
+    }
+
+    input, select {
+      background:#0d101c;
+      color:var(--text);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:13px 16px;
+      font-weight:800;
+      font-size:16px;
+      min-width:260px;
+    }
+
+    select {
+      cursor:pointer;
     }
 
     input[type="number"] {
-      width: 140px;
+      min-width:180px;
     }
 
-    input[type="text"], input[type="password"] {
-      min-width: 220px;
+    input[type="checkbox"] {
+      min-width:auto;
+      width:24px;
+      height:24px;
     }
 
     .status {
-      font-weight: 800;
-      color: var(--muted);
+      font-weight:1000;
+      color:var(--good);
+      margin-left:4px;
     }
 
-    details {
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      background: rgba(255,255,255,.045);
-      margin: 10px 0;
-      overflow: hidden;
+    .status.error {
+      color:var(--bad);
     }
 
-    summary {
-      cursor: pointer;
-      padding: 13px 14px;
-      font-weight: 900;
-      background: rgba(255,255,255,.045);
+    .section {
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:22px;
+      margin:18px 0;
+      overflow:hidden;
     }
 
-    .inside {
-      padding: 12px;
+    .section-title {
+      background:var(--panel2);
+      padding:20px;
+      font-size:22px;
+      font-weight:1000;
+      cursor:pointer;
+      user-select:none;
+    }
+
+    .section-body {
+      padding:20px;
     }
 
     .field {
-      display: grid;
-      grid-template-columns: minmax(180px, 1fr) 220px;
-      gap: 14px;
-      align-items: center;
-      padding: 10px 0;
-      border-bottom: 1px solid rgba(255,255,255,.08);
+      display:grid;
+      grid-template-columns: 1fr auto;
+      gap:20px;
+      align-items:center;
+      padding:16px 0;
+      border-bottom:1px solid rgba(255,255,255,.08);
     }
 
     .field:last-child {
-      border-bottom: 0;
+      border-bottom:none;
     }
 
-    .key {
-      color: var(--muted);
-      font-weight: 800;
+    .field-name {
+      font-size:20px;
+      font-weight:1000;
+      color:#cbd6ff;
     }
 
-    .hint {
-      font-size: 12px;
-      color: var(--muted);
-      margin-top: 3px;
+    .field-type {
+      margin-top:4px;
+      font-size:14px;
+      color:#b8c3ee;
+      font-weight:500;
     }
 
-    .danger {
-      color: var(--bad);
+    .nested {
+      margin-left:0;
     }
 
-    .success {
-      color: var(--good);
-    }
-
-    @media (max-width: 700px) {
-      .field {
-        grid-template-columns: 1fr;
+    @media (max-width: 760px) {
+      body {
+        padding:18px;
       }
 
-      input[type="number"], input[type="text"], input[type="password"] {
-        width: 100%;
-        box-sizing: border-box;
+      .field {
+        grid-template-columns:1fr;
+      }
+
+      input, select {
+        width:100%;
+        min-width:0;
       }
     }
   </style>
 </head>
 
 <body>
-  <div class="wrap">
-    <h1>Neon Babo Defaults</h1>
-    <p>
-      Edit the server-side defaults used by new matches.
-      Existing matches may not fully reset until a new match starts.
-    </p>
+  <h1>Neon Babo Defaults</h1>
+  <p>Edit the server-side defaults used by new matches. Existing matches may not fully reset until a new match starts.</p>
 
-    <div class="topbar">
-      <button id="reloadBtn" class="secondary">Reload</button>
-      <button id="saveBtn">Save Defaults</button>
-      <input id="adminKey" type="password" placeholder="Admin key, if enabled" />
-      <span id="status" class="status">Loading...</span>
-    </div>
-
-    <div id="form"></div>
+  <div class="toolbar">
+    <button id="reloadBtn">Reload</button>
+    <button id="saveBtn" class="primary">Save Defaults</button>
+    <input id="adminKey" placeholder="Admin key, if enabled" />
+    <span id="status" class="status">Loading...</span>
   </div>
 
+  <div id="root"></div>
+
   <script>
-    let currentDefaults = {};
-
-    const form = document.getElementById("form");
+    const rootEl = document.getElementById("root");
     const statusEl = document.getElementById("status");
-    const adminKeyInput = document.getElementById("adminKey");
+    const reloadBtn = document.getElementById("reloadBtn");
+    const saveBtn = document.getElementById("saveBtn");
+    const adminKeyEl = document.getElementById("adminKey");
 
-    adminKeyInput.value = localStorage.getItem("defaultsAdminKey") || "";
+    let defaultsData = {};
 
-    function setStatus(text, type = "") {
+    adminKeyEl.value = localStorage.getItem("defaultsAdminKey") || "";
+
+    adminKeyEl.addEventListener("input", () => {
+      localStorage.setItem("defaultsAdminKey", adminKeyEl.value);
+    });
+
+    function setStatus(text, isError = false) {
       statusEl.textContent = text;
-      statusEl.className = "status " + type;
+      statusEl.classList.toggle("error", !!isError);
     }
 
-    function deepClone(value) {
-      return JSON.parse(JSON.stringify(value));
+    function isPlainObject(value) {
+      return (
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+      );
     }
 
-    function setByPath(obj, path, value) {
-      let ref = obj;
+    function getType(value) {
+      if (Array.isArray(value)) return "array";
+      if (value === null) return "null";
+      return typeof value;
+    }
 
-      for (let i = 0; i < path.length - 1; i++) {
-        ref = ref[path[i]];
+    function pathToString(path) {
+      return path.join(".");
+    }
+
+    function getDropdownOptions(pathString) {
+      if (pathString === "game.mode") {
+        return [
+          { value: "multiplayer", label: "Multiplayer" },
+          { value: "singleplayer", label: "Singleplayer" },
+          { value: "training", label: "Training" },
+        ];
       }
 
-      ref[path[path.length - 1]] = value;
+      if (pathString === "singleplayer.difficulty") {
+        return [
+          { value: "easy", label: "1. Easy" },
+          { value: "medium", label: "2. Medium" },
+          { value: "hard", label: "3. Hard" },
+          { value: "extreme", label: "4. Extremely hard" },
+          { value: "machine", label: "5. Machine level hard" },
+        ];
+      }
+
+      return null;
     }
 
-    function makeField(path, value) {
-      const row = document.createElement("div");
-      row.className = "field";
+    function normalizeDropdownValue(pathString, value) {
+      const raw = String(value || "").trim().toLowerCase().replace(/\s+/g, "");
 
-      const left = document.createElement("div");
+      if (pathString === "game.mode") {
+        if (raw === "singleplayer" || raw === "single") return "singleplayer";
+        if (raw === "training" || raw === "train") return "training";
+        return "multiplayer";
+      }
 
-      const key = document.createElement("div");
-      key.className = "key";
-      key.textContent = path.join(".");
+      if (pathString === "singleplayer.difficulty") {
+        if (raw === "1" || raw === "easy") return "easy";
+        if (raw === "2" || raw === "medium") return "medium";
+        if (raw === "3" || raw === "hard") return "hard";
+        if (raw === "4" || raw === "extreme" || raw === "extremelyhard") return "extreme";
+        if (raw === "5" || raw === "machine" || raw === "machinelevelhard") return "machine";
+        return "easy";
+      }
 
-      const hint = document.createElement("div");
-      hint.className = "hint";
-      hint.textContent = typeof value;
+      return value;
+    }
 
-      left.appendChild(key);
-      left.appendChild(hint);
+    function makeInput(value, path) {
+      const pathString = pathToString(path);
+      const dropdownOptions = getDropdownOptions(pathString);
 
       let input;
+
+      if (dropdownOptions) {
+        input = document.createElement("select");
+
+        for (const optionData of dropdownOptions) {
+          const option = document.createElement("option");
+          option.value = optionData.value;
+          option.textContent = optionData.label;
+          input.appendChild(option);
+        }
+
+        input.value = normalizeDropdownValue(pathString, value);
+        return input;
+      }
 
       if (typeof value === "boolean") {
         input = document.createElement("input");
         input.type = "checkbox";
         input.checked = value;
-      } else if (typeof value === "number") {
+        return input;
+      }
+
+      if (typeof value === "number") {
         input = document.createElement("input");
         input.type = "number";
         input.step = "any";
         input.value = value;
-      } else {
-        input = document.createElement("input");
-        input.type = "text";
-        input.value = value;
+        return input;
       }
 
-      input.dataset.path = JSON.stringify(path);
-      input.dataset.type = typeof value;
+      input = document.createElement("input");
+      input.type = "text";
+      input.value = value ?? "";
 
-      row.appendChild(left);
-      row.appendChild(input);
-
-      return row;
+      return input;
     }
 
-    function renderNode(value, path = []) {
-      const container = document.createElement("div");
+    function readInputValue(input, originalValue, path) {
+      const pathString = pathToString(path);
+      const dropdownOptions = getDropdownOptions(pathString);
 
-      if (value && typeof value === "object") {
-        for (const [key, child] of Object.entries(value)) {
-          const childPath = path.concat(key);
-
-          if (child && typeof child === "object") {
-            const details = document.createElement("details");
-            details.open = path.length < 1;
-
-            const summary = document.createElement("summary");
-            summary.textContent = childPath.join(".");
-
-            const inside = document.createElement("div");
-            inside.className = "inside";
-            inside.appendChild(renderNode(child, childPath));
-
-            details.appendChild(summary);
-            details.appendChild(inside);
-            container.appendChild(details);
-          } else {
-            container.appendChild(makeField(childPath, child));
-          }
-        }
+      if (dropdownOptions) {
+        return input.value;
       }
 
-      return container;
+      if (typeof originalValue === "boolean") {
+        return !!input.checked;
+      }
+
+      if (typeof originalValue === "number") {
+        const n = Number(input.value);
+        return Number.isFinite(n) ? n : originalValue;
+      }
+
+      return input.value;
     }
 
-    function readFormValues() {
-      const updated = deepClone(currentDefaults);
-      const inputs = form.querySelectorAll("[data-path]");
+    function setAtPath(obj, path, value) {
+      let cur = obj;
 
-      for (const input of inputs) {
-        const path = JSON.parse(input.dataset.path);
-        const type = input.dataset.type;
+      for (let i = 0; i < path.length - 1; i++) {
+        const key = path[i];
 
-        let value;
-
-        if (type === "boolean") {
-          value = input.checked;
-        } else if (type === "number") {
-          value = Number(input.value);
-        } else {
-          value = input.value;
+        if (!isPlainObject(cur[key])) {
+          cur[key] = {};
         }
 
-        setByPath(updated, path, value);
+        cur = cur[key];
       }
 
-      return updated;
+      cur[path[path.length - 1]] = value;
     }
 
-    async function api(path, options = {}) {
-      const headers = options.headers || {};
-      const adminKey = adminKeyInput.value.trim();
+    function renderObject(obj, container, path = []) {
+      for (const [key, value] of Object.entries(obj)) {
+        const nextPath = [...path, key];
 
-      if (adminKey) {
-        headers["x-admin-key"] = adminKey;
+        if (isPlainObject(value)) {
+          const section = document.createElement("div");
+          section.className = "section";
+
+          const title = document.createElement("div");
+          title.className = "section-title";
+          title.textContent = "▼ " + pathToString(nextPath);
+
+          const body = document.createElement("div");
+          body.className = "section-body nested";
+
+          title.addEventListener("click", () => {
+            const hidden = body.style.display === "none";
+            body.style.display = hidden ? "" : "none";
+            title.textContent = (hidden ? "▼ " : "▶ ") + pathToString(nextPath);
+          });
+
+          renderObject(value, body, nextPath);
+
+          section.appendChild(title);
+          section.appendChild(body);
+          container.appendChild(section);
+          continue;
+        }
+
+        const field = document.createElement("div");
+        field.className = "field";
+
+        const label = document.createElement("div");
+
+        const name = document.createElement("div");
+        name.className = "field-name";
+        name.textContent = pathToString(nextPath);
+
+        const type = document.createElement("div");
+        type.className = "field-type";
+        type.textContent = getDropdownOptions(pathToString(nextPath))
+          ? "dropdown"
+          : getType(value);
+
+        label.appendChild(name);
+        label.appendChild(type);
+
+        const input = makeInput(value, nextPath);
+
+        input.addEventListener("change", () => {
+          setAtPath(defaultsData, nextPath, readInputValue(input, value, nextPath));
+          setStatus("Unsaved changes");
+        });
+
+        input.addEventListener("input", () => {
+          setAtPath(defaultsData, nextPath, readInputValue(input, value, nextPath));
+          setStatus("Unsaved changes");
+        });
+
+        field.appendChild(label);
+        field.appendChild(input);
+        container.appendChild(field);
       }
-
-      if (options.body) {
-        headers["Content-Type"] = "application/json";
-      }
-
-      const res = await fetch(path, {
-        ...options,
-        headers,
-        cache: "no-store",
-      });
-
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-
-      return res.json();
     }
 
     async function loadDefaults() {
       try {
         setStatus("Loading...");
-        currentDefaults = await api("/api/defaults");
-        form.innerHTML = "";
-        form.appendChild(renderNode(currentDefaults));
-        setStatus("Loaded", "success");
+
+        const res = await fetch("/api/defaults", {
+          cache: "no-store",
+        });
+
+        if (!res.ok) {
+          throw new Error("Could not load defaults");
+        }
+
+        defaultsData = await res.json();
+
+        rootEl.innerHTML = "";
+        renderObject(defaultsData, rootEl);
+
+        setStatus("Loaded");
       } catch (err) {
         console.error(err);
-        setStatus("Load failed", "danger");
+        setStatus(err.message || "Load failed", true);
       }
     }
 
@@ -345,27 +441,39 @@
       try {
         setStatus("Saving...");
 
-        localStorage.setItem("defaultsAdminKey", adminKeyInput.value.trim());
+        const headers = {
+          "Content-Type": "application/json",
+        };
 
-        const updated = readFormValues();
+        if (adminKeyEl.value.trim()) {
+          headers["x-admin-key"] = adminKeyEl.value.trim();
+        }
 
-        currentDefaults = await api("/api/defaults", {
+        const res = await fetch("/api/defaults", {
           method: "POST",
-          body: JSON.stringify(updated),
+          headers,
+          body: JSON.stringify(defaultsData),
         });
 
-        form.innerHTML = "";
-        form.appendChild(renderNode(currentDefaults));
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Save failed");
+        }
 
-        setStatus("Saved", "success");
+        defaultsData = await res.json();
+
+        rootEl.innerHTML = "";
+        renderObject(defaultsData, rootEl);
+
+        setStatus("Saved");
       } catch (err) {
         console.error(err);
-        setStatus("Save failed: " + err.message, "danger");
+        setStatus(err.message || "Save failed", true);
       }
     }
 
-    document.getElementById("reloadBtn").onclick = loadDefaults;
-    document.getElementById("saveBtn").onclick = saveDefaults;
+    reloadBtn.addEventListener("click", loadDefaults);
+    saveBtn.addEventListener("click", saveDefaults);
 
     loadDefaults();
   </script>
