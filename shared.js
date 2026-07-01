@@ -32,6 +32,10 @@ const DEFAULTS = {
     mode: "multiplayer", // multiplayer | singleplayer | training
   },
 
+  singleplayer: {
+    difficulty: "easy", // easy | medium | hard | extreme | machine
+  },
+
   training: {
     enabled: true,
     autoStart: true,
