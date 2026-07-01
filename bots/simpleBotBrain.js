@@ -44,20 +44,35 @@ function makeMemory() {
     advancedStuckDir: Math.random() < 0.5 ? -1 : 1,
     advancedLastTargetReason: "",
     advancedLastObjective: null,
+
+    brainModeChoice: null,
+
+    objectiveBufferUntil: 0,
+    lastObjectiveBufferTriggerAt: 0,
+
+    humanEvent: null,
+    humanEventUntil: 0,
+    nextHumanEventAt: Date.now() + 1500 + Math.random() * 2500,
   };
 }
 
-function getBrainMode() {
-  const raw = String(DEFAULTS.bots?.brainMode || "basic")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
-
-  if (raw === "advanced" || raw === "smart" || raw === "2") {
-    return "advanced";
+function getBrainMode(memory = null) {
+  if (memory && memory.brainModeChoice) {
+    return memory.brainModeChoice;
   }
 
-  return "basic";
+  const rawChance = Number(DEFAULTS.bots?.basicBrainChancePercent ?? 50);
+  const basicChance = clamp(Number.isFinite(rawChance) ? rawChance : 50, 0, 100);
+
+  const chosen = Math.random() * 100 < basicChance
+    ? "basic"
+    : "advanced";
+
+  if (memory) {
+    memory.brainModeChoice = chosen;
+  }
+
+  return chosen;
 }
 
 function n(value, fallback) {
@@ -70,7 +85,15 @@ function bool(value, fallback) {
   return fallback;
 }
 
-function getAggressionLevel(name, fallback = 5) {
+function getAggressionLevel(name, fallback = 5, memory = null) {
+  const now = Date.now();
+
+  if (memory && memory.objectiveBufferUntil && now < memory.objectiveBufferUntil) {
+    const bufferLevel = Number(DEFAULTS.bots?.bufferMethod?.stuckAggressionLevel ?? 2);
+
+    return clamp(Number.isFinite(bufferLevel) ? bufferLevel : 2, 0, 10);
+  }
+
   const levels = DEFAULTS.bots?.aggressionLevel || {};
   const value = Number(levels[name]);
 
@@ -85,13 +108,13 @@ function radiusScale(level) {
   return clamp(0.5 + level / 10, 0.5, 1.5);
 }
 
-function getBotConfig(profile = {}) {
-  const flagPursuitLevel = getAggressionLevel("flagPursuit", 5);
-  const flagDefenseLevel = getAggressionLevel("flagDefense", 5);
-  const baseDefenseLevel = getAggressionLevel("baseDefense", 5);
-  const basePursuitLevel = getAggressionLevel("basePursuit", 5);
-  const recapturingOwnFlagLevel = getAggressionLevel("recapturingOwnFlag", 5);
-  const recapturingEnemyFlagLevel = getAggressionLevel("recapturingEnemyFlag", 5);
+function getBotConfig(profile = {}, memory = null) {
+  const flagPursuitLevel = getAggressionLevel("flagPursuit", 5, memory);
+  const flagDefenseLevel = getAggressionLevel("flagDefense", 5, memory);
+  const baseDefenseLevel = getAggressionLevel("baseDefense", 5, memory);
+  const basePursuitLevel = getAggressionLevel("basePursuit", 5, memory);
+  const recapturingOwnFlagLevel = getAggressionLevel("recapturingOwnFlag", 5, memory);
+  const recapturingEnemyFlagLevel = getAggressionLevel("recapturingEnemyFlag", 5, memory);
 
   const flagPursuitBase = n(
     profile.flagPursuitWeight,
@@ -519,6 +542,29 @@ function updateStuckState(memory, me, now) {
   return now - memory.lastProgressAt > 900;
 }
 
+function applyBasicBufferMethod(memory, stuck, now) {
+  const buffer = DEFAULTS.bots?.bufferMethod || {};
+
+  if (!buffer.enabled) return;
+
+  const durationSeconds = Number(buffer.durationSeconds ?? 3);
+  const durationMs = clamp(
+    Number.isFinite(durationSeconds) ? durationSeconds : 3,
+    1,
+    30
+  ) * 1000;
+
+  if (
+    stuck &&
+    now - Number(memory.lastObjectiveBufferTriggerAt || 0) > durationMs + 500
+  ) {
+    memory.objectiveBufferUntil = now + durationMs;
+    memory.lastObjectiveBufferTriggerAt = now;
+    memory.advancedPathUntil = 0;
+    memory.waypointUntil = 0;
+  }
+}
+
 function vectorToKeys(x, y, movementMultiplier = 1) {
   const safeMove = Math.max(0.2, n(movementMultiplier, 1));
   const threshold = 0.25 / safeMove;
@@ -531,8 +577,8 @@ function vectorToKeys(x, y, movementMultiplier = 1) {
   };
 }
 
-function defaultInput(profile, aim = 0) {
-  const cfg = getBotConfig(profile);
+function defaultInput(profile, aim = 0, memory = null) {
+  const cfg = getBotConfig(profile, memory);
 
   return {
     up: false,
@@ -577,16 +623,22 @@ function addAimError(aim, cfg) {
 }
 
 function decideNowBasic(snapshot, mySocketId, enemySocketId, profile, memory) {
-  const cfg = getBotConfig(profile);
-
   const me = snapshot?.players?.[mySocketId];
   const enemy = snapshot?.players?.[enemySocketId];
 
+  const fallbackCfg = getBotConfig(profile, memory);
+
   if (!me || !enemy || !me.alive) {
-    return defaultInput(cfg, 0);
+    return defaultInput(fallbackCfg, 0, memory);
   }
 
   const now = Date.now();
+
+  const basicStuckCheck = updateStuckState(memory, me, now);
+  applyBasicBufferMethod(memory, basicStuckCheck, now);
+
+  const cfg = getBotConfig(profile, memory);
+
   const d = dist(me.x, me.y, enemy.x, enemy.y);
   const trueAim = angleTo(me.x, me.y, enemy.x, enemy.y);
   const aim = addAimError(trueAim, cfg);
@@ -652,9 +704,7 @@ function decideNowBasic(snapshot, mySocketId, enemySocketId, profile, memory) {
       moveX += Math.cos(tacticalAngle) * tacticalStrength;
       moveY += Math.sin(tacticalAngle) * tacticalStrength;
 
-      const stuck = updateStuckState(memory, me, now);
-
-      if (stuck) {
+      if (basicStuckCheck) {
         moveX += -Math.sin(tacticalAngle) * memory.strafeDir * 1.25;
         moveY += Math.cos(tacticalAngle) * memory.strafeDir * 1.25;
         memory.waypointUntil = 0;
@@ -1527,8 +1577,195 @@ function finalizeCombatInput({
   };
 }
 
+function getHumanBrainSettings() {
+  const human = DEFAULTS.bots?.humanBrain || {};
+
+  const randomizedEvents = clamp(
+    Number(human.randomizedEvents ?? 0) || 0,
+    0,
+    10
+  );
+
+  const imperfections = clamp(
+    Number(human.imperfections ?? 0) || 0,
+    0,
+    10
+  );
+
+  return {
+    randomizedEvents,
+    imperfections,
+  };
+}
+
+function maybeStartHumanEvent(memory, now, score) {
+  if (score <= 0) return;
+
+  if (memory.humanEvent && now < memory.humanEventUntil) {
+    return;
+  }
+
+  if (now < Number(memory.nextHumanEventAt || 0)) {
+    return;
+  }
+
+  const chance = score / 10;
+
+  memory.nextHumanEventAt =
+    now +
+    1800 +
+    Math.random() * 4200 -
+    score * 90;
+
+  if (Math.random() > chance) {
+    return;
+  }
+
+  const events = [
+    "hesitate",
+    "fumble",
+    "overcorrect",
+    "panicDodge",
+    "tunnelVision",
+  ];
+
+  const event = events[Math.floor(Math.random() * events.length)];
+
+  memory.humanEvent = event;
+  memory.humanEventUntil =
+    now +
+    220 +
+    Math.random() * (350 + score * 90);
+}
+
+function applyHumanEvent(input, memory, now, score) {
+  if (!memory.humanEvent || now >= memory.humanEventUntil) {
+    memory.humanEvent = null;
+    return input;
+  }
+
+  const out = { ...input };
+  const strength = score / 10;
+
+  if (memory.humanEvent === "hesitate") {
+    out.up = false;
+    out.down = false;
+    out.left = false;
+    out.right = false;
+
+    if (Math.random() < 0.7 * strength) {
+      out.fire = false;
+    }
+  }
+
+  if (memory.humanEvent === "fumble") {
+    out.grenadePressed = false;
+    out.sniperPressed = false;
+    out.knifePressed = false;
+    out.molotovPressed = false;
+    out.ball = false;
+
+    if (Math.random() < 0.35 * strength) {
+      out.dashPressed = false;
+    }
+  }
+
+  if (memory.humanEvent === "overcorrect") {
+    if (Math.random() < 0.5) {
+      const oldLeft = out.left;
+      out.left = out.right;
+      out.right = oldLeft;
+    } else {
+      const oldUp = out.up;
+      out.up = out.down;
+      out.down = oldUp;
+    }
+
+    out.aim += (Math.random() * 2 - 1) * 0.35 * strength;
+  }
+
+  if (memory.humanEvent === "panicDodge") {
+    out.fire = Math.random() < 0.35 ? false : out.fire;
+    out.block = Math.random() < 0.45 ? true : out.block;
+
+    const dir = Math.random();
+
+    out.up = dir < 0.25;
+    out.down = dir >= 0.25 && dir < 0.5;
+    out.left = dir >= 0.5 && dir < 0.75;
+    out.right = dir >= 0.75;
+  }
+
+  if (memory.humanEvent === "tunnelVision") {
+    out.fire = out.fire || Math.random() < 0.65 * strength;
+    out.block = Math.random() < 0.4 * strength ? false : out.block;
+  }
+
+  return out;
+}
+
+function applyImperfections(input, score) {
+  if (score <= 0) return input;
+
+  const out = { ...input };
+  const strength = score / 10;
+
+  out.aim += (Math.random() * 2 - 1) * 0.18 * strength;
+
+  if (Math.random() < 0.012 * score) {
+    out.fire = false;
+  }
+
+  if (Math.random() < 0.008 * score) {
+    out.block = false;
+  }
+
+  if (Math.random() < 0.006 * score) {
+    out.grenadePressed = false;
+    out.sniperPressed = false;
+    out.knifePressed = false;
+    out.molotovPressed = false;
+  }
+
+  if (Math.random() < 0.004 * score) {
+    const oldLeft = out.left;
+    out.left = out.right;
+    out.right = oldLeft;
+  }
+
+  return out;
+}
+
+function applyHumanBrainLayer(input, memory) {
+  const settings = getHumanBrainSettings();
+
+  if (settings.randomizedEvents <= 0 && settings.imperfections <= 0) {
+    return input;
+  }
+
+  const now = Date.now();
+
+  maybeStartHumanEvent(memory, now, settings.randomizedEvents);
+
+  let output = input;
+
+  output = applyHumanEvent(
+    output,
+    memory,
+    now,
+    settings.randomizedEvents
+  );
+
+  output = applyImperfections(
+    output,
+    settings.imperfections
+  );
+
+  return output;
+}
+
 function decide(snapshot, mySocketId, enemySocketId, profile, memory) {
-  const cfg = getBotConfig(profile);
+  const cfg = getBotConfig(profile, memory);
 
   const now = Date.now();
   const reactionMs = Math.max(0, n(cfg.reactionMs, 0));
@@ -1538,20 +1775,22 @@ function decide(snapshot, mySocketId, enemySocketId, profile, memory) {
     reactionMs > 0 &&
     now - memory.lastDecisionAt < reactionMs
   ) {
-    return memory.cachedInput;
+    return applyHumanBrainLayer(memory.cachedInput, memory);
   }
 
-  const mode = getBrainMode();
+  const mode = getBrainMode(memory);
 
   const nextInput =
     mode === "advanced"
-      ? decideNowAdvanced(snapshot, mySocketId, enemySocketId, cfg, memory)
-      : decideNowBasic(snapshot, mySocketId, enemySocketId, cfg, memory);
+      ? decideNowAdvanced(snapshot, mySocketId, enemySocketId, profile, memory)
+      : decideNowBasic(snapshot, mySocketId, enemySocketId, profile, memory);
 
-  memory.cachedInput = nextInput;
+  const finalInput = applyHumanBrainLayer(nextInput, memory);
+
+  memory.cachedInput = finalInput;
   memory.lastDecisionAt = now;
 
-  return nextInput;
+  return finalInput;
 }
 
 module.exports = {
