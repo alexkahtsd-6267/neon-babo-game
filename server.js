@@ -7,6 +7,7 @@ const { DEFAULTS } = require("./shared");
 const matchLogger = require("./matchLogger");
 const { createBotClient } = require("./bots/botClient");
 const { createTrainingManager } = require("./trainingManager");
+const { getLearningLog } = require("./learningLogStore");
 
 const {
   loadSavedDefaults,
@@ -148,6 +149,7 @@ const server = http.createServer(async (req, res) => {
             trainingManager.stopAll("mode changed away from training");
             latestSpectatorSnapshot = null;
             latestSpectatorMeta = null;
+            latestTrainingRoomId = null;
             broadcastSpectatorStatus();
           }
         }
@@ -172,6 +174,12 @@ const server = http.createServer(async (req, res) => {
       singleplayerDifficulty: getSingleplayerDifficulty(),
       rawSingleplayerDifficulty: DEFAULTS.singleplayer?.difficulty,
     });
+    return;
+  }
+
+  if (pathname === "/api/log" || pathname === "/api/learning-log") {
+    const limit = Number(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, getLearningLog({ limit }));
     return;
   }
 
@@ -211,7 +219,10 @@ const server = http.createServer(async (req, res) => {
       },
     });
 
-    sendJson(res, 200, trainingManager.startTrainingPair("manual-start"));
+    const status = trainingManager.startTrainingPair("manual-start");
+    broadcastSpectatorStatus();
+
+    sendJson(res, 200, status);
     return;
   }
 
@@ -222,6 +233,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     const status = trainingManager.stopAll("manual-stop");
+
+    latestSpectatorSnapshot = null;
+    latestSpectatorMeta = null;
+    latestTrainingRoomId = null;
+
     broadcastSpectatorStatus();
 
     sendJson(res, 200, status);
@@ -252,6 +268,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     filePath = path.join(__dirname, "spectate.html");
+  } else if (
+    pathname === "/Log" ||
+    pathname === "/log" ||
+    pathname === "/learning-log" ||
+    pathname === "/learninglog"
+  ) {
+    filePath = path.join(__dirname, "log.html");
   } else if (pathname === "/training" || pathname === "/training.html") {
     if (
       trainingManager &&
@@ -295,6 +318,7 @@ const SPECTATOR_ROOM = "spectators";
 
 let latestSpectatorSnapshot = null;
 let latestSpectatorMeta = null;
+let latestTrainingRoomId = null;
 
 const queues = {
   multiplayerHumans: [],
@@ -313,7 +337,7 @@ function getSpectatorStatus() {
   return {
     mode: getGameMode(),
     hasSnapshot: !!latestSpectatorSnapshot,
-    roomId: latestSpectatorMeta?.roomId || null,
+    roomId: latestTrainingRoomId,
     meta: latestSpectatorMeta,
     training: trainingManager ? trainingManager.getStatus() : null,
   };
@@ -323,19 +347,12 @@ function broadcastSpectatorStatus() {
   io.to(SPECTATOR_ROOM).emit("spectatorStatus", getSpectatorStatus());
 }
 
-function broadcastSpectatorSnapshot(meta, snapshot) {
-  latestSpectatorMeta = meta;
-  latestSpectatorSnapshot = snapshot;
-
-  io.to(SPECTATOR_ROOM).emit("spectatorSnapshot", {
-    meta: latestSpectatorMeta,
-    snapshot: latestSpectatorSnapshot,
-    training: trainingManager ? trainingManager.getStatus() : null,
-  });
-}
-
 function handleSpectatorConnection(socket) {
   socket.join(SPECTATOR_ROOM);
+
+  if (latestTrainingRoomId) {
+    socket.join(latestTrainingRoomId);
+  }
 
   console.log("Spectator connected:", socket.id);
 
@@ -444,7 +461,13 @@ function startMatchRecord(game, matchType, socketA, socketB) {
         matchLogger.logEvent(matchId, "world.snapshot", snapshot);
 
         if (matchType === "training") {
-          broadcastSpectatorSnapshot(meta, snapshot);
+          latestSpectatorSnapshot = snapshot;
+
+          io.to(SPECTATOR_ROOM).emit("spectatorSnapshot", {
+            meta: latestSpectatorMeta,
+            snapshot: latestSpectatorSnapshot,
+            training: trainingManager ? trainingManager.getStatus() : null,
+          });
         }
       }
 
@@ -463,6 +486,9 @@ function startMatchRecord(game, matchType, socketA, socketB) {
   if (matchType === "training" && trainingManager) {
     latestSpectatorMeta = meta;
     latestSpectatorSnapshot = null;
+    latestTrainingRoomId = game.roomId;
+
+    io.in(SPECTATOR_ROOM).socketsJoin(game.roomId);
 
     trainingManager.onTrainingMatchStarted(meta);
     broadcastSpectatorStatus();
@@ -506,6 +532,13 @@ function finishMatchRecord(roomId, result = {}) {
 
   if (summary.matchType === "training" && trainingManager) {
     trainingManager.onTrainingMatchEnded(summary);
+
+    io.in(SPECTATOR_ROOM).socketsLeave(roomId);
+
+    if (latestTrainingRoomId === roomId) {
+      latestTrainingRoomId = null;
+    }
+
     broadcastSpectatorStatus();
   }
 
