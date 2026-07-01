@@ -2,86 +2,99 @@ const fs = require("fs");
 const path = require("path");
 const { DEFAULTS } = require("./shared");
 
-const DEFAULTS_FILE = path.join(__dirname, "defaults.json");
+const DEFAULTS_FILE = path.join(__dirname, "savedDefaults.json");
+
+function isPlainObject(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  );
+}
 
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function isPlainObject(value) {
-  return value && typeof value === "object" && !Array.isArray(value);
+function deepMerge(base, override) {
+  const result = deepClone(base);
+
+  if (!isPlainObject(override)) {
+    return result;
+  }
+
+  for (const [key, value] of Object.entries(override)) {
+    if (isPlainObject(value) && isPlainObject(result[key])) {
+      result[key] = deepMerge(result[key], value);
+    } else {
+      result[key] = value;
+    }
+  }
+
+  return result;
 }
 
-function mergeKnownKeys(target, incoming) {
-  if (!isPlainObject(target) || !isPlainObject(incoming)) return;
+function replaceObjectContents(target, source) {
+  for (const key of Object.keys(target)) {
+    delete target[key];
+  }
 
-  for (const [key, incomingValue] of Object.entries(incoming)) {
-    if (!(key in target)) continue;
+  for (const [key, value] of Object.entries(source)) {
+    target[key] = value;
+  }
+}
 
-    const targetValue = target[key];
+function loadJsonFile(filePath) {
+  if (!fs.existsSync(filePath)) return null;
 
-    if (Array.isArray(targetValue) && Array.isArray(incomingValue)) {
-      const template = targetValue[0];
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (err) {
+    console.error("Could not read saved defaults:", err);
+    return null;
+  }
+}
 
-      if (isPlainObject(template)) {
-        target[key] = incomingValue.map((item) => {
-          const cleanItem = deepClone(template);
-          mergeKnownKeys(cleanItem, item);
-          return cleanItem;
-        });
-      } else {
-        target[key] = incomingValue.slice();
-      }
-
-      continue;
-    }
-
-    if (isPlainObject(targetValue) && isPlainObject(incomingValue)) {
-      mergeKnownKeys(targetValue, incomingValue);
-      continue;
-    }
-
-    if (typeof targetValue === "number") {
-      const n = Number(incomingValue);
-      if (Number.isFinite(n)) target[key] = n;
-      continue;
-    }
-
-    if (typeof targetValue === "boolean") {
-      target[key] = incomingValue === true || incomingValue === "true";
-      continue;
-    }
-
-    if (typeof targetValue === "string") {
-      target[key] = String(incomingValue);
-    }
+function saveDefaults() {
+  try {
+    fs.writeFileSync(DEFAULTS_FILE, JSON.stringify(DEFAULTS, null, 2));
+  } catch (err) {
+    console.error("Could not save defaults:", err);
   }
 }
 
 function loadSavedDefaults() {
-  if (!fs.existsSync(DEFAULTS_FILE)) return;
+  const saved = loadJsonFile(DEFAULTS_FILE);
 
-  try {
-    const saved = JSON.parse(fs.readFileSync(DEFAULTS_FILE, "utf8"));
-    mergeKnownKeys(DEFAULTS, saved);
-    console.log("Loaded defaults.json");
-  } catch (err) {
-    console.error("Could not load defaults.json:", err);
-  }
-}
+  const merged = deepMerge(DEFAULTS, saved || {});
 
-function saveCurrentDefaults() {
-  fs.writeFileSync(DEFAULTS_FILE, JSON.stringify(DEFAULTS, null, 2));
+  replaceObjectContents(DEFAULTS, merged);
+
+  saveDefaults();
+
+  return DEFAULTS;
 }
 
 function getDefaults() {
-  return deepClone(DEFAULTS);
+  const saved = loadJsonFile(DEFAULTS_FILE);
+
+  const merged = deepMerge(DEFAULTS, saved || {});
+
+  replaceObjectContents(DEFAULTS, merged);
+
+  saveDefaults();
+
+  return DEFAULTS;
 }
 
-function updateDefaults(incoming) {
-  mergeKnownKeys(DEFAULTS, incoming);
-  saveCurrentDefaults();
-  return getDefaults();
+function updateDefaults(nextDefaults = {}) {
+  const merged = deepMerge(DEFAULTS, nextDefaults);
+
+  replaceObjectContents(DEFAULTS, merged);
+
+  saveDefaults();
+
+  return DEFAULTS;
 }
 
 module.exports = {
