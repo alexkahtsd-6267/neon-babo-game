@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Neon Babo Training</title>
+
+  <style>
+    :root {
+      --bg:#070915;
+      --panel:rgba(255,255,255,.07);
+      --line:rgba(255,255,255,.14);
+      --text:#e9ecff;
+      --muted:#b7bddb;
+      --good:#5cffc1;
+      --warn:#ffd56a;
+      --bad:#ff5c7c;
+      --accent:#7aa7ff;
+    }
+
+    body {
+      margin:0;
+      min-height:100vh;
+      background:
+        radial-gradient(900px 700px at 20% 10%, rgba(122,167,255,.18), transparent 55%),
+        radial-gradient(800px 700px at 80% 20%, rgba(176,122,255,.14), transparent 55%),
+        var(--bg);
+      color:var(--text);
+      font-family:ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      padding:24px;
+      box-sizing:border-box;
+    }
+
+    .wrap {
+      max-width:1100px;
+      margin:0 auto;
+    }
+
+    h1 {
+      margin:0 0 6px;
+      font-size:32px;
+    }
+
+    p {
+      color:var(--muted);
+      line-height:1.5;
+    }
+
+    .topbar, .card {
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:18px;
+      box-shadow:0 18px 50px rgba(0,0,0,.35);
+      backdrop-filter:blur(12px);
+    }
+
+    .topbar {
+      padding:14px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      margin:18px 0;
+    }
+
+    button, a.button {
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:11px 14px;
+      background:linear-gradient(180deg, rgba(122,167,255,.22), rgba(122,167,255,.07));
+      color:var(--text);
+      font-weight:900;
+      cursor:pointer;
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+    }
+
+    button.secondary, a.secondary {
+      background:rgba(255,255,255,.06);
+      color:var(--muted);
+    }
+
+    input {
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:10px 12px;
+      background:rgba(0,0,0,.22);
+      color:var(--text);
+      font-weight:800;
+    }
+
+    .grid {
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:14px;
+    }
+
+    .card {
+      padding:16px;
+    }
+
+    .label {
+      color:var(--muted);
+      font-size:13px;
+      font-weight:800;
+    }
+
+    .value {
+      font-size:26px;
+      font-weight:1000;
+      margin-top:6px;
+    }
+
+    .small {
+      color:var(--muted);
+      font-size:13px;
+      margin-top:8px;
+      line-height:1.5;
+    }
+
+    .good { color:var(--good); }
+    .warn { color:var(--warn); }
+    .bad { color:var(--bad); }
+
+    .bar {
+      width:100%;
+      height:12px;
+      background:rgba(255,255,255,.09);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:999px;
+      overflow:hidden;
+      margin-top:10px;
+    }
+
+    .fill {
+      height:100%;
+      width:0%;
+      background:linear-gradient(90deg, var(--good), var(--accent));
+      border-radius:999px;
+    }
+
+    pre {
+      white-space:pre-wrap;
+      word-break:break-word;
+      background:rgba(0,0,0,.22);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:14px;
+      color:var(--muted);
+      max-height:420px;
+      overflow:auto;
+    }
+
+    @media (max-width:850px) {
+      .grid {
+        grid-template-columns:1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <h1>Neon Babo Training</h1>
+
+    <p>
+      This dashboard shows the bot training loop. Current version uses simple rule-based bots and match logs.
+      Later, the neural network can train from these logs.
+    </p>
+
+    <div class="topbar">
+      <button id="refreshBtn" class="secondary">Refresh</button>
+      <button id="startBtn">Start / Resume</button>
+      <button id="stopBtn" class="secondary">Stop</button>
+      <a class="button secondary" href="/play">Open Game</a>
+      <a class="button secondary" href="/defaults">Defaults</a>
+      <input id="adminKey" type="password" placeholder="Admin key, if enabled" />
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="label">Mode</div>
+        <div id="mode" class="value">—</div>
+        <div id="status" class="small">Loading...</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Daily training</div>
+        <div id="daily" class="value">—</div>
+        <div class="bar"><div id="dailyFill" class="fill"></div></div>
+        <div id="dailyHint" class="small">—</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Current match</div>
+        <div id="current" class="value">—</div>
+        <div id="currentHint" class="small">—</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Matches today</div>
+        <div id="matches" class="value">—</div>
+        <div id="matchesHint" class="small">—</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Bot wins today</div>
+        <div id="wins" class="value">—</div>
+        <div id="winsHint" class="small">—</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Brain</div>
+        <div id="brain" class="value">—</div>
+        <div id="brainHint" class="small">—</div>
+      </div>
+    </div>
+
+    <h2>Raw status</h2>
+    <pre id="raw">Loading...</pre>
+  </div>
+
+  <script>
+    const adminKeyInput = document.getElementById("adminKey");
+
+    adminKeyInput.value = localStorage.getItem("defaultsAdminKey") || "";
+
+    const fmtMs = (ms) => {
+      ms = Math.max(0, Number(ms) || 0);
+
+      const totalSeconds = Math.floor(ms / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+
+      return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+    };
+
+    async function api(path, options = {}) {
+      const headers = options.headers || {};
+      const adminKey = adminKeyInput.value.trim();
+
+      if (adminKey) {
+        headers["x-admin-key"] = adminKey;
+      }
+
+      const res = await fetch(path, {
+        ...options,
+        headers,
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+
+      return res.json();
+    }
+
+    function setText(id, value) {
+      document.getElementById(id).textContent = value;
+    }
+
+    function render(s) {
+      setText("mode", s.mode || "—");
+
+      document.getElementById("mode").className =
+        "value " + (s.mode === "training" ? "good" : "warn");
+
+      setText("status", s.lastStatus || "—");
+
+      setText("daily", `${fmtMs(s.usedMsToday)} / ${fmtMs(s.dailyLimitMs)}`);
+      setText("dailyHint", `${fmtMs(s.remainingMsToday)} remaining today`);
+
+      const pct = s.dailyLimitMs
+        ? Math.min(100, (s.usedMsToday / s.dailyLimitMs) * 100)
+        : 0;
+
+      document.getElementById("dailyFill").style.width = pct.toFixed(1) + "%";
+
+      setText("current", s.active ? "Active" : "Idle");
+
+      document.getElementById("current").className =
+        "value " + (s.active ? "good" : "warn");
+
+      setText(
+        "currentHint",
+        s.currentRoomId
+          ? `${s.currentRoomId}\n${fmtMs(s.currentMatchMs)}`
+          : "No active training match"
+      );
+
+      setText("matches", String(s.matchesToday ?? 0));
+      setText("matchesHint", `Singleplayer logs today: ${s.singleplayerMatchesToday ?? 0}`);
+
+      setText("wins", `${s.bot1WinsToday ?? 0} / ${s.bot2WinsToday ?? 0}`);
+
+      setText(
+        "winsHint",
+        `Bot 1 / Bot 2 · draws/timeouts: ${s.drawsToday ?? 0} · last: ${s.lastWinner || "—"}`
+      );
+
+      setText("brain", s.brainVersion || "—");
+      setText("brainHint", "Simple brain now. Neural net later.");
+
+      setText("raw", JSON.stringify(s, null, 2));
+    }
+
+    async function refresh() {
+      try {
+        const s = await api("/api/training");
+        render(s);
+      } catch (err) {
+        setText("raw", "Error: " + err.message);
+      }
+    }
+
+    async function post(path) {
+      localStorage.setItem("defaultsAdminKey", adminKeyInput.value.trim());
+
+      const s = await api(path, {
+        method: "POST",
+      });
+
+      render(s);
+    }
+
+    document.getElementById("refreshBtn").onclick = refresh;
+
+    document.getElementById("startBtn").onclick = () => {
+      post("/api/training/start").catch((err) => alert(err.message));
+    };
+
+    document.getElementById("stopBtn").onclick = () => {
+      post("/api/training/stop").catch((err) => alert(err.message));
+    };
+
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>
