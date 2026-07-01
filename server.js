@@ -1,3 +1,9 @@
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const { Server } = require("socket.io");
+const { createServerGame } = require("./serverGame");
+
 const {
   loadSavedDefaults,
   getDefaults,
@@ -5,12 +11,6 @@ const {
 } = require("./defaultsStore");
 
 loadSavedDefaults();
-
-const http = require("http");
-const fs = require("fs");
-const path = require("path");
-const { Server } = require("socket.io");
-const { createServerGame } = require("./serverGame");
 
 const PORT = process.env.PORT || 3000;
 
@@ -32,26 +32,109 @@ function serveFile(res, filePath) {
 
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
+
     res.writeHead(200, { "Content-Type": contentType });
     res.end(content);
   });
 }
 
-const server = http.createServer((req, res) => {
-  if (req.url === "/favicon.ico") {
+function sendJson(res, status, data) {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+  });
+
+  res.end(JSON.stringify(data));
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+
+    req.on("data", (chunk) => {
+      body += chunk;
+
+      if (body.length > 1_000_000) {
+        reject(new Error("Request body too large"));
+        req.destroy();
+      }
+    });
+
+    req.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    req.on("error", reject);
+  });
+}
+
+function canEditDefaults(req) {
+  const adminKey = process.env.DEFAULTS_ADMIN_KEY;
+
+  // If no key is configured, editing is open.
+  // For public deployment, you should set DEFAULTS_ADMIN_KEY.
+  if (!adminKey) return true;
+
+  return req.headers["x-admin-key"] === adminKey;
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  const pathname = url.pathname;
+
+  if (pathname === "/favicon.ico") {
     res.writeHead(204);
     res.end();
     return;
   }
 
-  let filePath = path.join(__dirname, "index.html");
+  if (pathname === "/api/defaults") {
+    if (req.method === "GET") {
+      sendJson(res, 200, getDefaults());
+      return;
+    }
 
-  if (req.url === "/clientNet.js") {
+    if (req.method === "POST") {
+      if (!canEditDefaults(req)) {
+        sendJson(res, 401, { error: "Unauthorized" });
+        return;
+      }
+
+      try {
+        const body = await readJsonBody(req);
+        const updated = updateDefaults(body);
+        sendJson(res, 200, updated);
+      } catch (err) {
+        console.error("Defaults update error:", err);
+        sendJson(res, 400, { error: "Invalid defaults payload" });
+      }
+
+      return;
+    }
+
+    sendJson(res, 405, { error: "Method not allowed" });
+    return;
+  }
+
+  let filePath = null;
+
+  if (pathname === "/" || pathname === "/index.html") {
+    filePath = path.join(__dirname, "index.html");
+  } else if (pathname === "/defaults" || pathname === "/defaults.html") {
+    filePath = path.join(__dirname, "defaults.html");
+  } else if (pathname === "/clientNet.js") {
     filePath = path.join(__dirname, "clientNet.js");
-  } else if (req.url === "/shared.js") {
+  } else if (pathname === "/shared.js") {
     filePath = path.join(__dirname, "shared.js");
-  } else if (req.url === "/serverGame.js") {
-    filePath = path.join(__dirname, "serverGame.js");
+  }
+
+  if (!filePath) {
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Not found");
+    return;
   }
 
   serveFile(res, filePath);
@@ -89,6 +172,7 @@ io.on("connection", (socket) => {
     socket.join(roomId);
 
     const game = createServerGame(io, roomId, waitingPlayer.id, socket.id);
+
     matches.set(roomId, game);
     socketToRoom.set(waitingPlayer.id, roomId);
     socketToRoom.set(socket.id, roomId);
@@ -105,10 +189,12 @@ io.on("connection", (socket) => {
 
   socket.on("inputUpdate", ({ roomId, input }) => {
     const knownRoomId = socketToRoom.get(socket.id);
+
     if (!knownRoomId) return;
     if (roomId !== knownRoomId) return;
 
     const game = matches.get(knownRoomId);
+
     if (!game) return;
 
     game.setInput(socket.id, input || {});
@@ -120,8 +206,10 @@ io.on("connection", (socket) => {
     clearWaitingPlayerIfMatches(socket.id);
 
     const roomId = socketToRoom.get(socket.id);
+
     if (roomId) {
       const game = matches.get(roomId);
+
       if (game) {
         game.onDisconnect(socket.id);
         game.stop();
