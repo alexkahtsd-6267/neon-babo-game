@@ -1,4 +1,11 @@
-const { angleTo, dist, hasLineOfSight, clamp, FLAG_BASES } = require("../shared");
+const {
+  angleTo,
+  dist,
+  hasLineOfSight,
+  clamp,
+  FLAG_BASES,
+  DEFAULTS,
+} = require("../shared");
 
 function makeMemory() {
   return {
@@ -28,7 +35,36 @@ function bool(value, fallback) {
   return fallback;
 }
 
+function getAggressionLevel(name, fallback = 5) {
+  const levels = DEFAULTS.bots?.aggressionLevel || {};
+  const value = Number(levels[name]);
+
+  return clamp(Number.isFinite(value) ? value : fallback, 0, 10);
+}
+
+function levelScale(level) {
+  // 0 = 0x, 5 = 1x, 10 = 2x
+  return clamp(level / 5, 0, 2);
+}
+
+function radiusScale(level) {
+  // 0 = smaller awareness, 5 = normal, 10 = wider awareness
+  return clamp(0.5 + level / 10, 0.5, 1.5);
+}
+
 function getBotConfig(profile = {}) {
+  const flagPursuitLevel = getAggressionLevel("flagPursuit", 5);
+  const flagDefenseLevel = getAggressionLevel("flagDefense", 5);
+  const baseDefenseLevel = getAggressionLevel("baseDefense", 5);
+  const basePursuitLevel = getAggressionLevel("basePursuit", 5);
+  const recapturingOwnFlagLevel = getAggressionLevel("recapturingOwnFlag", 5);
+  const recapturingEnemyFlagLevel = getAggressionLevel("recapturingEnemyFlag", 5);
+
+  const flagPursuitBase = n(
+    profile.flagPursuitWeight,
+    n(profile.flagCaptureWeight, 0.75)
+  );
+
   return {
     aggression: n(profile.aggression, 0.9),
     idealDistance: n(profile.idealDistance, 520),
@@ -45,12 +81,40 @@ function getBotConfig(profile = {}) {
     fireMultiplier: n(profile.fireMultiplier, 1),
     movementMultiplier: n(profile.movementMultiplier, 1),
 
-    flagDefenseWeight: n(profile.flagDefenseWeight, 0.75),
-    flagCaptureWeight: n(profile.flagCaptureWeight, 0.75),
-    baseDefenseWeight: n(profile.baseDefenseWeight, 1.0),
-    flagReturnWeight: n(profile.flagReturnWeight, 1.0),
-    flagThreatRadius: n(profile.flagThreatRadius, 520),
-    blockWhenEnemyHasFlagDistance: n(profile.blockWhenEnemyHasFlagDistance, 720),
+    flagPursuitLevel,
+    flagDefenseLevel,
+    baseDefenseLevel,
+    basePursuitLevel,
+    recapturingOwnFlagLevel,
+    recapturingEnemyFlagLevel,
+
+    flagPursuitWeight:
+      flagPursuitBase * levelScale(flagPursuitLevel),
+
+    flagDefenseWeight:
+      n(profile.flagDefenseWeight, 0.75) * levelScale(flagDefenseLevel),
+
+    baseDefenseWeight:
+      n(profile.baseDefenseWeight, 1.0) * levelScale(baseDefenseLevel),
+
+    basePursuitWeight:
+      n(profile.basePursuitWeight, n(profile.flagReturnWeight, 1.0)) *
+      levelScale(basePursuitLevel),
+
+    recapturingOwnFlagWeight:
+      n(profile.recapturingOwnFlagWeight, 1.15) *
+      levelScale(recapturingOwnFlagLevel),
+
+    recapturingEnemyFlagWeight:
+      n(profile.recapturingEnemyFlagWeight, 1.1) *
+      levelScale(recapturingEnemyFlagLevel),
+
+    flagThreatRadius:
+      n(profile.flagThreatRadius, 520) * radiusScale(flagDefenseLevel),
+
+    blockWhenEnemyHasFlagDistance:
+      n(profile.blockWhenEnemyHasFlagDistance, 720) *
+      radiusScale(baseDefenseLevel),
 
     allowBall: bool(profile.allowBall, true),
     allowGrenade: bool(profile.allowGrenade, true),
@@ -87,26 +151,65 @@ function flagIsCarried(flag) {
   );
 }
 
+function flagIsDropped(flag) {
+  return !!(
+    flag &&
+    !flagIsCarried(flag) &&
+    (
+      flag.dropped ||
+      flag.isDropped ||
+      flag.state === "dropped"
+    )
+  );
+}
+
+function getPointFromObject(obj, fallback = null) {
+  if (!obj) return fallback;
+
+  const x = Number(obj.x);
+  const y = Number(obj.y);
+
+  if (Number.isFinite(x) && Number.isFinite(y)) {
+    return { x, y };
+  }
+
+  return fallback;
+}
+
+function getBasePoint(team, flag) {
+  const base = FLAG_BASES?.[team] || null;
+
+  return (
+    getPointFromObject(base) ||
+    getPointFromObject(flag) ||
+    null
+  );
+}
+
 function getTacticalTarget(snapshot, me, enemy, mySocketId, enemySocketId, cfg) {
   const flags = snapshot?.flags || {};
+
   const myTeam = me.team || "p1";
   const enemyTeam = myTeam === "p1" ? "p2" : "p1";
 
   const ownFlag = flags[myTeam];
   const enemyFlag = flags[enemyTeam];
 
-  const ownBase = FLAG_BASES[myTeam] || ownFlag;
-  const enemyBase = FLAG_BASES[enemyTeam] || enemyFlag;
+  const ownBase = getBasePoint(myTeam, ownFlag);
+  const enemyBase = getBasePoint(enemyTeam, enemyFlag);
 
   const meHasEnemyFlag = flagCarrierIs(enemyFlag, mySocketId);
   const enemyHasMyFlag = flagCarrierIs(ownFlag, enemySocketId);
 
-  if (meHasEnemyFlag && !enemyHasMyFlag && ownBase) {
+  const ownFlagDropped = flagIsDropped(ownFlag);
+  const enemyFlagDropped = flagIsDropped(enemyFlag);
+
+  if (meHasEnemyFlag && ownBase) {
     return {
       x: ownBase.x,
       y: ownBase.y,
-      weight: cfg.flagReturnWeight,
-      reason: "return enemy flag to own base",
+      weight: cfg.basePursuitWeight,
+      reason: "base pursuit: return to base with enemy flag",
     };
   }
 
@@ -115,30 +218,69 @@ function getTacticalTarget(snapshot, me, enemy, mySocketId, enemySocketId, cfg) 
       x: enemy.x,
       y: enemy.y,
       weight: cfg.baseDefenseWeight,
-      reason: "stop enemy flag carrier",
+      reason: "base defense: stop enemy flag carrier",
     };
   }
 
-  if (ownFlag && enemy) {
-    const enemyDistToOwnFlag = dist(enemy.x, enemy.y, ownFlag.x, ownFlag.y);
+  if (ownFlagDropped) {
+    const ownFlagPoint = getPointFromObject(ownFlag, ownBase);
 
-    if (enemyDistToOwnFlag < cfg.flagThreatRadius) {
+    if (ownFlagPoint) {
       return {
-        x: ownFlag.x,
-        y: ownFlag.y,
-        weight: cfg.flagDefenseWeight,
-        reason: "defend own flag",
+        x: ownFlagPoint.x,
+        y: ownFlagPoint.y,
+        weight: cfg.recapturingOwnFlagWeight,
+        reason: "recapturing own flag",
       };
     }
   }
 
+  if (enemyFlagDropped) {
+    const enemyFlagPoint = getPointFromObject(enemyFlag, enemyBase);
+
+    if (enemyFlagPoint) {
+      return {
+        x: enemyFlagPoint.x,
+        y: enemyFlagPoint.y,
+        weight: cfg.recapturingEnemyFlagWeight,
+        reason: "recapturing enemy flag",
+      };
+    }
+  }
+
+  if (ownFlag && enemy) {
+    const ownFlagPoint = getPointFromObject(ownFlag, ownBase);
+
+    if (ownFlagPoint) {
+      const enemyDistToOwnFlag = dist(
+        enemy.x,
+        enemy.y,
+        ownFlagPoint.x,
+        ownFlagPoint.y
+      );
+
+      if (enemyDistToOwnFlag < cfg.flagThreatRadius) {
+        return {
+          x: ownFlagPoint.x,
+          y: ownFlagPoint.y,
+          weight: cfg.flagDefenseWeight,
+          reason: "flag defense: enemy near own flag",
+        };
+      }
+    }
+  }
+
   if (enemyFlag && !flagIsCarried(enemyFlag)) {
-    return {
-      x: enemyFlag.x || enemyBase?.x || enemy.x,
-      y: enemyFlag.y || enemyBase?.y || enemy.y,
-      weight: cfg.flagCaptureWeight,
-      reason: "capture enemy flag",
-    };
+    const enemyFlagPoint = getPointFromObject(enemyFlag, enemyBase);
+
+    if (enemyFlagPoint) {
+      return {
+        x: enemyFlagPoint.x,
+        y: enemyFlagPoint.y,
+        weight: cfg.flagPursuitWeight,
+        reason: "flag pursuit: capture enemy flag",
+      };
+    }
   }
 
   return null;
@@ -252,12 +394,24 @@ function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
     cfg
   );
 
-  if (tacticalTarget) {
-    const tacticalAngle = angleTo(me.x, me.y, tacticalTarget.x, tacticalTarget.y);
-    const tacticalDist = dist(me.x, me.y, tacticalTarget.x, tacticalTarget.y);
+  if (tacticalTarget && tacticalTarget.weight > 0) {
+    const tacticalAngle = angleTo(
+      me.x,
+      me.y,
+      tacticalTarget.x,
+      tacticalTarget.y
+    );
+
+    const tacticalDist = dist(
+      me.x,
+      me.y,
+      tacticalTarget.x,
+      tacticalTarget.y
+    );
+
     const tacticalStrength =
       tacticalTarget.weight *
-      clamp(tacticalDist / 420, 0.25, 1.25);
+      clamp(tacticalDist / 420, 0.25, 1.4);
 
     moveX += Math.cos(tacticalAngle) * tacticalStrength;
     moveY += Math.sin(tacticalAngle) * tacticalStrength;
