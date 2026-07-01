@@ -1,4 +1,4 @@
-const { angleTo, dist, hasLineOfSight, clamp } = require("../shared");
+const { angleTo, dist, hasLineOfSight, clamp, FLAG_BASES } = require("../shared");
 
 function makeMemory() {
   return {
@@ -45,6 +45,13 @@ function getBotConfig(profile = {}) {
     fireMultiplier: n(profile.fireMultiplier, 1),
     movementMultiplier: n(profile.movementMultiplier, 1),
 
+    flagDefenseWeight: n(profile.flagDefenseWeight, 0.75),
+    flagCaptureWeight: n(profile.flagCaptureWeight, 0.75),
+    baseDefenseWeight: n(profile.baseDefenseWeight, 1.0),
+    flagReturnWeight: n(profile.flagReturnWeight, 1.0),
+    flagThreatRadius: n(profile.flagThreatRadius, 520),
+    blockWhenEnemyHasFlagDistance: n(profile.blockWhenEnemyHasFlagDistance, 720),
+
     allowBall: bool(profile.allowBall, true),
     allowGrenade: bool(profile.allowGrenade, true),
     allowSniper: bool(profile.allowSniper, true),
@@ -57,6 +64,84 @@ function getBotConfig(profile = {}) {
     speed: n(profile.speed, 1500),
     dpsMult: n(profile.dpsMult, 1),
   };
+}
+
+function flagCarrierIs(flag, socketId) {
+  if (!flag || !socketId) return false;
+
+  return (
+    flag.carrier === socketId ||
+    flag.carrierSocketId === socketId ||
+    flag.carrierId === socketId
+  );
+}
+
+function flagIsCarried(flag) {
+  return !!(
+    flag &&
+    (
+      flag.carrier ||
+      flag.carrierSocketId ||
+      flag.carrierId
+    )
+  );
+}
+
+function getTacticalTarget(snapshot, me, enemy, mySocketId, enemySocketId, cfg) {
+  const flags = snapshot?.flags || {};
+  const myTeam = me.team || "p1";
+  const enemyTeam = myTeam === "p1" ? "p2" : "p1";
+
+  const ownFlag = flags[myTeam];
+  const enemyFlag = flags[enemyTeam];
+
+  const ownBase = FLAG_BASES[myTeam] || ownFlag;
+  const enemyBase = FLAG_BASES[enemyTeam] || enemyFlag;
+
+  const meHasEnemyFlag = flagCarrierIs(enemyFlag, mySocketId);
+  const enemyHasMyFlag = flagCarrierIs(ownFlag, enemySocketId);
+
+  if (meHasEnemyFlag && !enemyHasMyFlag && ownBase) {
+    return {
+      x: ownBase.x,
+      y: ownBase.y,
+      weight: cfg.flagReturnWeight,
+      reason: "return enemy flag to own base",
+    };
+  }
+
+  if (enemyHasMyFlag) {
+    return {
+      x: enemy.x,
+      y: enemy.y,
+      weight: cfg.baseDefenseWeight,
+      reason: "stop enemy flag carrier",
+    };
+  }
+
+  if (ownFlag && enemy) {
+    const enemyDistToOwnFlag = dist(enemy.x, enemy.y, ownFlag.x, ownFlag.y);
+
+    if (enemyDistToOwnFlag < cfg.flagThreatRadius) {
+      return {
+        x: ownFlag.x,
+        y: ownFlag.y,
+        weight: cfg.flagDefenseWeight,
+        reason: "defend own flag",
+      };
+    }
+  }
+
+  if (enemyFlag && !flagIsCarried(enemyFlag)) {
+    return {
+      x: enemyFlag.x || enemyBase?.x || enemy.x,
+      y: enemyFlag.y || enemyBase?.y || enemy.y,
+      weight: cfg.flagCaptureWeight,
+      reason: "capture enemy flag",
+    };
+  }
+
+  return null;
 }
 
 function vectorToKeys(x, y, movementMultiplier = 1) {
@@ -155,8 +240,28 @@ function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
   const sx = -uy * memory.strafeDir;
   const sy = ux * memory.strafeDir;
 
-  const moveX = ux * toward + sx * cfg.strafeAmount * cfg.movementMultiplier;
-  const moveY = uy * toward + sy * cfg.strafeAmount * cfg.movementMultiplier;
+  let moveX = ux * toward + sx * cfg.strafeAmount * cfg.movementMultiplier;
+  let moveY = uy * toward + sy * cfg.strafeAmount * cfg.movementMultiplier;
+
+  const tacticalTarget = getTacticalTarget(
+    snapshot,
+    me,
+    enemy,
+    mySocketId,
+    enemySocketId,
+    cfg
+  );
+
+  if (tacticalTarget) {
+    const tacticalAngle = angleTo(me.x, me.y, tacticalTarget.x, tacticalTarget.y);
+    const tacticalDist = dist(me.x, me.y, tacticalTarget.x, tacticalTarget.y);
+    const tacticalStrength =
+      tacticalTarget.weight *
+      clamp(tacticalDist / 420, 0.25, 1.25);
+
+    moveX += Math.cos(tacticalAngle) * tacticalStrength;
+    moveY += Math.sin(tacticalAngle) * tacticalStrength;
+  }
 
   const mag = Math.hypot(moveX, moveY) || 1;
 
@@ -166,12 +271,22 @@ function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
     cfg.movementMultiplier
   );
 
+  const flags = snapshot?.flags || {};
+  const ownFlag = flags[me.team];
+  const enemyHasMyFlag = flagCarrierIs(ownFlag, enemySocketId);
+
   const enemyShooting = !!enemy.shooting;
 
   const shouldBlock =
     cfg.allowBlock &&
-    enemyShooting &&
-    d < 800 &&
+    (
+      enemyShooting ||
+      (
+        enemyHasMyFlag &&
+        d < cfg.blockWhenEnemyHasFlagDistance
+      )
+    ) &&
+    d < 900 &&
     Math.random() < cfg.blockChance;
 
   let dashPressed = false;
