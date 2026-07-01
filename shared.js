@@ -37,6 +37,8 @@ const DEFAULTS = {
   },
 
   bots: {
+    brainMode: "basic", // basic | advanced
+
     aggressionLevel: {
       // 0 = ignore this objective
       // 5 = normal
