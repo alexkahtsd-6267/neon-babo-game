@@ -236,6 +236,10 @@
         "game.mode": "Game Mode",
         "singleplayer.difficulty": "Singleplayer Difficulty",
 
+        "bots": "Bots",
+        "bots.brainMode": "Bot Brain Mode",
+        "bots.aggressionLevel": "Bot Aggression Levels",
+
         "bots.aggressionLevel.flagPursuit": "Aggression Level: Flag pursuit",
         "bots.aggressionLevel.flagDefense": "Aggression Level: Flag defense",
         "bots.aggressionLevel.baseDefense": "Aggression Level: Base defense",
@@ -261,6 +265,13 @@
     }
 
     function getDropdownOptions(pathString) {
+      if (pathString === "bots.brainMode") {
+        return [
+          { value: "basic", label: "Basic bot brain" },
+          { value: "advanced", label: "Advanced bot brain" },
+        ];
+      }
+
       if (pathString === "game.mode") {
         return [
           { value: "multiplayer", label: "Multiplayer" },
@@ -284,6 +295,11 @@
 
     function normalizeDropdownValue(pathString, value) {
       const raw = String(value || "").trim().toLowerCase().replace(/\s+/g, "");
+
+      if (pathString === "bots.brainMode") {
+        if (raw === "advanced" || raw === "smart" || raw === "2") return "advanced";
+        return "basic";
+      }
 
       if (pathString === "game.mode") {
         if (raw === "singleplayer" || raw === "single") return "singleplayer";
