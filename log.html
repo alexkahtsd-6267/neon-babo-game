@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Neon Babo Learning Log</title>
+
+  <style>
+    :root {
+      --bg:#080b18;
+      --panel:#171b2a;
+      --panel2:#202536;
+      --text:#eef2ff;
+      --muted:#b9c2e6;
+      --line:rgba(255,255,255,.13);
+      --accent:#8aa8ff;
+      --good:#5cffc1;
+      --bad:#ff5c7c;
+      --warn:#ffd56a;
+    }
+
+    * {
+      box-sizing:border-box;
+    }
+
+    body {
+      margin:0;
+      padding:30px;
+      background:
+        radial-gradient(900px 600px at 10% 0%, rgba(138,168,255,.15), transparent 55%),
+        radial-gradient(900px 600px at 90% 10%, rgba(92,255,193,.08), transparent 55%),
+        var(--bg);
+      color:var(--text);
+      font-family:system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    h1 {
+      margin:0 0 8px;
+      font-size:36px;
+      letter-spacing:.3px;
+    }
+
+    .sub {
+      color:var(--muted);
+      font-size:17px;
+      margin-bottom:24px;
+    }
+
+    .toolbar {
+      display:flex;
+      gap:12px;
+      align-items:center;
+      flex-wrap:wrap;
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:20px;
+      padding:16px;
+      margin-bottom:22px;
+    }
+
+    button, a.btn {
+      background:#2b334b;
+      color:var(--text);
+      border:1px solid rgba(255,255,255,.14);
+      padding:12px 16px;
+      border-radius:13px;
+      font-weight:900;
+      font-size:15px;
+      cursor:pointer;
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+    }
+
+    button:hover, a.btn:hover {
+      filter:brightness(1.12);
+    }
+
+    .status {
+      color:var(--good);
+      font-weight:900;
+    }
+
+    .status.error {
+      color:var(--bad);
+    }
+
+    .grid {
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:18px;
+      margin-bottom:20px;
+    }
+
+    .card {
+      background:rgba(23,27,42,.88);
+      border:1px solid var(--line);
+      border-radius:20px;
+      overflow:hidden;
+      box-shadow:0 18px 50px rgba(0,0,0,.25);
+    }
+
+    .cardHead {
+      background:var(--panel2);
+      padding:16px 18px;
+      font-size:20px;
+      font-weight:1000;
+    }
+
+    .cardBody {
+      padding:18px;
+    }
+
+    .statRow {
+      display:grid;
+      grid-template-columns:1fr auto;
+      gap:14px;
+      padding:8px 0;
+      border-bottom:1px solid rgba(255,255,255,.07);
+      font-size:15px;
+    }
+
+    .statRow:last-child {
+      border-bottom:0;
+    }
+
+    .key {
+      color:#cbd6ff;
+      font-weight:800;
+    }
+
+    .value {
+      color:var(--text);
+      font-weight:900;
+      text-align:right;
+    }
+
+    .historyItem {
+      background:rgba(255,255,255,.045);
+      border:1px solid rgba(255,255,255,.1);
+      border-radius:16px;
+      padding:14px;
+      margin-bottom:12px;
+    }
+
+    .historyTitle {
+      font-weight:1000;
+      font-size:16px;
+      margin-bottom:6px;
+    }
+
+    .muted {
+      color:var(--muted);
+      font-size:14px;
+      line-height:1.45;
+    }
+
+    .changes {
+      margin-top:10px;
+      display:grid;
+      gap:7px;
+    }
+
+    .change {
+      display:grid;
+      grid-template-columns:180px 1fr;
+      gap:10px;
+      background:rgba(0,0,0,.18);
+      border:1px solid rgba(255,255,255,.07);
+      border-radius:12px;
+      padding:9px;
+      font-size:14px;
+    }
+
+    .deltaGood {
+      color:var(--good);
+      font-weight:1000;
+    }
+
+    .deltaBad {
+      color:var(--bad);
+      font-weight:1000;
+    }
+
+    pre {
+      white-space:pre-wrap;
+      word-break:break-word;
+      background:#060813;
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:16px;
+      color:#dce4ff;
+      max-height:520px;
+      overflow:auto;
+      font-size:13px;
+    }
+
+    .full {
+      grid-column:1 / -1;
+    }
+
+    @media (max-width:900px) {
+      body {
+        padding:18px;
+      }
+
+      .grid {
+        grid-template-columns:1fr;
+      }
+
+      .change {
+        grid-template-columns:1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Neon Babo Learning Log</h1>
+  <div class="sub">
+    Shows the bot brain, current learned settings, and learning history from training and singleplayer matches.
+  </div>
+
+  <div class="toolbar">
+    <button id="reloadBtn">Reload</button>
+    <button id="autoBtn">Auto-refresh: Off</button>
+    <a class="btn" href="/training">Training Dashboard</a>
+    <a class="btn" href="/spectate">Spectate</a>
+    <a class="btn" href="/defaults">Defaults</a>
+    <a class="btn" href="/play">Play</a>
+    <span id="status" class="status">Loading...</span>
+  </div>
+
+  <div id="app"></div>
+
+  <script>
+    const app = document.getElementById("app");
+    const statusEl = document.getElementById("status");
+    const reloadBtn = document.getElementById("reloadBtn");
+    const autoBtn = document.getElementById("autoBtn");
+
+    let autoRefresh = false;
+    let autoTimer = null;
+
+    function setStatus(text, isError = false) {
+      statusEl.textContent = text;
+      statusEl.classList.toggle("error", !!isError);
+    }
+
+    function fmt(value) {
+      if (typeof value === "number") {
+        if (Math.abs(value) >= 100) return String(Math.round(value));
+        return String(Math.round(value * 1000) / 1000);
+      }
+
+      if (typeof value === "boolean") return value ? "true" : "false";
+      if (value === null || value === undefined) return "—";
+
+      return String(value);
+    }
+
+    function esc(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function profileHtml(name, profile) {
+      const entries = Object.entries(profile || {});
+
+      if (!entries.length) {
+        return `
+          <div class="card">
+            <div class="cardHead">${esc(name)}</div>
+            <div class="cardBody muted">No profile data yet.</div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="card">
+          <div class="cardHead">${esc(name)}</div>
+          <div class="cardBody">
+            ${entries.map(([key, value]) => `
+              <div class="statRow">
+                <div class="key">${esc(key)}</div>
+                <div class="value">${esc(fmt(value))}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    function changeHtml(change) {
+      const before = change.before;
+      const after = change.after;
+      const delta = change.delta;
+
+      let deltaClass = "";
+
+      if (typeof delta === "number") {
+        if (delta > 0) deltaClass = "deltaGood";
+        if (delta < 0) deltaClass = "deltaBad";
+      }
+
+      return `
+        <div class="change">
+          <div class="key">${esc(change.field || change.key || "field")}</div>
+          <div>
+            <b>${esc(fmt(before))}</b>
+            →
+            <b>${esc(fmt(after))}</b>
+            ${
+              delta !== undefined
+                ? `<span class="${deltaClass}">(${delta > 0 ? "+" : ""}${esc(fmt(delta))})</span>`
+                : ""
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    function historyHtml(history) {
+      if (!history || !history.length) {
+        return `
+          <div class="historyItem">
+            <div class="historyTitle">No learning history yet</div>
+            <div class="muted">
+              Run training or play singleplayer. After matches finish, learning entries should appear here.
+            </div>
+          </div>
+        `;
+      }
+
+      return history.map((entry, index) => {
+        const time = entry.timestamp || entry.time || entry.endedAt || "unknown time";
+        const matchId = entry.matchId || entry.summary?.matchId || "unknown match";
+        const matchType = entry.matchType || entry.summary?.matchType || "unknown";
+        const winner =
+          entry.winner?.botName ||
+          entry.winnerProfile ||
+          entry.winner ||
+          entry.summary?.winnerSocketId ||
+          "draw / unknown";
+
+        const mutatedProfiles = entry.mutatedProfiles || entry.mutations || [];
+
+        return `
+          <div class="historyItem">
+            <div class="historyTitle">
+              ${index + 1}. ${esc(matchType)} · ${esc(matchId)}
+            </div>
+
+            <div class="muted">
+              Time: ${esc(time)}<br>
+              Winner: ${esc(typeof winner === "object" ? JSON.stringify(winner) : winner)}<br>
+              Result: ${esc(entry.result || entry.reason || entry.summary?.reason || "ended")}
+            </div>
+
+            ${
+              mutatedProfiles.length
+                ? mutatedProfiles.map((m) => `
+                    <div class="changes">
+                      <div class="muted">
+                        <b>${esc(m.profileName || m.profile || "profile")}</b>
+                        ${m.reason ? `· ${esc(m.reason)}` : ""}
+                      </div>
+                      ${(m.changes || []).map(changeHtml).join("")}
+                    </div>
+                  `).join("")
+                : `<div class="muted" style="margin-top:10px;">No detailed mutation data in this entry.</div>`
+            }
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function loadLog() {
+      try {
+        setStatus("Loading...");
+
+        const res = await fetch("/api/log?limit=100", {
+          cache: "no-store",
+        });
+
+        if (!res.ok) {
+          throw new Error("Could not load learning log");
+        }
+
+        const data = await res.json();
+
+        const profiles = data.profiles || {};
+        const history = data.history || [];
+
+        app.innerHTML = `
+          <div class="grid">
+            <div class="card full">
+              <div class="cardHead">Summary</div>
+              <div class="cardBody">
+                <div class="statRow">
+                  <div class="key">Brain version</div>
+                  <div class="value">${esc(data.version || "unknown")}</div>
+                </div>
+                <div class="statRow">
+                  <div class="key">Brain file exists</div>
+                  <div class="value">${data.brainExists ? "yes" : "no"}</div>
+                </div>
+                <div class="statRow">
+                  <div class="key">History entries</div>
+                  <div class="value">${esc(data.historyCount || 0)}</div>
+                </div>
+                <div class="statRow">
+                  <div class="key">Generated at</div>
+                  <div class="value">${esc(data.generatedAt || "")}</div>
+                </div>
+              </div>
+            </div>
+
+            ${profileHtml("Bot 1 Brain", profiles.bot1)}
+            ${profileHtml("Bot 2 Brain", profiles.bot2)}
+
+            <div class="card full">
+              <div class="cardHead">Learning History</div>
+              <div class="cardBody">
+                ${historyHtml(history)}
+              </div>
+            </div>
+
+            <div class="card full">
+              <div class="cardHead">Raw Brain JSON</div>
+              <div class="cardBody">
+                <pre>${esc(JSON.stringify(data.rawBrain || {}, null, 2))}</pre>
+              </div>
+            </div>
+          </div>
+        `;
+
+        setStatus("Loaded");
+      } catch (err) {
+        console.error(err);
+        setStatus(err.message || "Load failed", true);
+      }
+    }
+
+    function updateAutoButton() {
+      autoBtn.textContent = autoRefresh ? "Auto-refresh: On" : "Auto-refresh: Off";
+
+      if (autoTimer) {
+        clearInterval(autoTimer);
+        autoTimer = null;
+      }
+
+      if (autoRefresh) {
+        autoTimer = setInterval(loadLog, 5000);
+      }
+    }
+
+    reloadBtn.addEventListener("click", loadLog);
+
+    autoBtn.addEventListener("click", () => {
+      autoRefresh = !autoRefresh;
+      updateAutoButton();
+    });
+
+    updateAutoButton();
+    loadLog();
+  </script>
+</body>
+</html>
