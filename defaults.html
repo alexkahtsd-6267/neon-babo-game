@@ -227,6 +227,39 @@
       return path.join(".");
     }
 
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function getFriendlyLabel(pathString) {
+      const labels = {
+        "game.mode": "Game Mode",
+        "singleplayer.difficulty": "Singleplayer Difficulty",
+
+        "bots.aggressionLevel.flagPursuit": "Aggression Level: Flag pursuit",
+        "bots.aggressionLevel.flagDefense": "Aggression Level: Flag defense",
+        "bots.aggressionLevel.baseDefense": "Aggression Level: Base defense",
+        "bots.aggressionLevel.basePursuit": "Aggression Level: Base pursuit",
+        "bots.aggressionLevel.recapturingOwnFlag": "Aggression Level: Recapturing own flag",
+        "bots.aggressionLevel.recapturingEnemyFlag": "Aggression Level: Recapturing enemy flag",
+      };
+
+      return labels[pathString] || pathString;
+    }
+
+    function getNumberBounds(pathString) {
+      if (pathString.startsWith("bots.aggressionLevel.")) {
+        return {
+          min: 0,
+          max: 10,
+          step: 1,
+          label: "number, 0–10",
+        };
+      }
+
+      return null;
+    }
+
     function getDropdownOptions(pathString) {
       if (pathString === "game.mode") {
         return [
@@ -300,7 +333,17 @@
       if (typeof value === "number") {
         input = document.createElement("input");
         input.type = "number";
-        input.step = "any";
+
+        const bounds = getNumberBounds(pathString);
+
+        if (bounds) {
+          input.min = String(bounds.min);
+          input.max = String(bounds.max);
+          input.step = String(bounds.step);
+        } else {
+          input.step = "any";
+        }
+
         input.value = value;
         return input;
       }
@@ -326,7 +369,18 @@
 
       if (typeof originalValue === "number") {
         const n = Number(input.value);
-        return Number.isFinite(n) ? n : originalValue;
+
+        if (!Number.isFinite(n)) {
+          return originalValue;
+        }
+
+        const bounds = getNumberBounds(pathString);
+
+        if (bounds) {
+          return clamp(Math.round(n), bounds.min, bounds.max);
+        }
+
+        return n;
       }
 
       return input.value;
@@ -351,6 +405,7 @@
     function renderObject(obj, container, path = []) {
       for (const [key, value] of Object.entries(obj)) {
         const nextPath = [...path, key];
+        const pathString = pathToString(nextPath);
 
         if (isPlainObject(value)) {
           const section = document.createElement("div");
@@ -358,7 +413,7 @@
 
           const title = document.createElement("div");
           title.className = "section-title";
-          title.textContent = "▼ " + pathToString(nextPath);
+          title.textContent = "▼ " + getFriendlyLabel(pathString);
 
           const body = document.createElement("div");
           body.className = "section-body nested";
@@ -366,7 +421,7 @@
           title.addEventListener("click", () => {
             const hidden = body.style.display === "none";
             body.style.display = hidden ? "" : "none";
-            title.textContent = (hidden ? "▼ " : "▶ ") + pathToString(nextPath);
+            title.textContent = (hidden ? "▼ " : "▶ ") + getFriendlyLabel(pathString);
           });
 
           renderObject(value, body, nextPath);
@@ -384,13 +439,18 @@
 
         const name = document.createElement("div");
         name.className = "field-name";
-        name.textContent = pathToString(nextPath);
+        name.textContent = getFriendlyLabel(pathString);
 
         const type = document.createElement("div");
         type.className = "field-type";
-        type.textContent = getDropdownOptions(pathToString(nextPath))
+
+        const bounds = getNumberBounds(pathString);
+
+        type.textContent = getDropdownOptions(pathString)
           ? "dropdown"
-          : getType(value);
+          : bounds
+            ? bounds.label
+            : getType(value);
 
         label.appendChild(name);
         label.appendChild(type);
@@ -398,7 +458,13 @@
         const input = makeInput(value, nextPath);
 
         input.addEventListener("change", () => {
-          setAtPath(defaultsData, nextPath, readInputValue(input, value, nextPath));
+          const nextValue = readInputValue(input, value, nextPath);
+
+          if (typeof value === "number") {
+            input.value = String(nextValue);
+          }
+
+          setAtPath(defaultsData, nextPath, nextValue);
           setStatus("Unsaved changes");
         });
 
