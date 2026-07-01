@@ -29,7 +29,17 @@ const FLAG_BASES = {
 
 const DEFAULTS = {
   game: {
-    mode: "multiplayer",
+    mode: "multiplayer", // multiplayer | singleplayer | training
+  },
+
+  training: {
+    enabled: true,
+    autoStart: true,
+    dailyLimitMinutes: 30,
+    maxMatchSeconds: 180,
+    restartDelayMs: 1500,
+    snapshotLogHz: 2,
+    inputLogHz: 10,
   },
 
   hpMax: 6000,
@@ -80,17 +90,8 @@ const DEFAULTS = {
   dashMax: 4,
   dashRechargeTime: 2.1,
 
-  p1: {
-    rate: 15,
-    speed: 1500,
-    dpsMult: 1.0,
-  },
-
-  p2: {
-    rate: 15,
-    speed: 1500,
-    dpsMult: 1.0,
-  },
+  p1: { rate: 15, speed: 1500, dpsMult: 1.0 },
+  p2: { rate: 15, speed: 1500, dpsMult: 1.0 },
 
   damageScalePoints: [
     { speed: 700, scale: 1 },
