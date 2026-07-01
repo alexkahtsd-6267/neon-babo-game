@@ -6,6 +6,7 @@ const { createServerGame } = require("./serverGame");
 const { DEFAULTS } = require("./shared");
 const matchLogger = require("./matchLogger");
 const { createBotClient } = require("./bots/botClient");
+const { createTrainingManager } = require("./trainingManager");
 
 const {
   loadSavedDefaults,
@@ -23,6 +24,8 @@ const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
 };
+
+let trainingManager = null;
 
 function getGameMode() {
   const raw = String(DEFAULTS.game?.mode || "multiplayer")
@@ -138,6 +141,14 @@ const server = http.createServer(async (req, res) => {
         console.log("Current mode:", getGameMode());
         console.log("Singleplayer difficulty:", getSingleplayerDifficulty());
 
+        if (trainingManager) {
+          if (getGameMode() === "training") {
+            trainingManager.ensureRunning("defaults-updated");
+          } else {
+            trainingManager.stopAll("mode changed away from training");
+          }
+        }
+
         sendJson(res, 200, updated);
       } catch (err) {
         console.error("Defaults update error:", err);
@@ -161,14 +172,77 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pathname === "/api/training") {
+    if (
+      trainingManager &&
+      getGameMode() === "training" &&
+      DEFAULTS.training?.autoStart
+    ) {
+      trainingManager.ensureRunning("api-training-status");
+    }
+
+    sendJson(
+      res,
+      200,
+      trainingManager
+        ? trainingManager.getStatus()
+        : { error: "Training manager not ready" }
+    );
+    return;
+  }
+
+  if (pathname === "/api/training/start" && req.method === "POST") {
+    if (!canEditDefaults(req)) {
+      sendJson(res, 401, { error: "Unauthorized" });
+      return;
+    }
+
+    updateDefaults({
+      game: {
+        mode: "training",
+      },
+    });
+
+    sendJson(res, 200, trainingManager.startTrainingPair("manual-start"));
+    return;
+  }
+
+  if (pathname === "/api/training/stop" && req.method === "POST") {
+    if (!canEditDefaults(req)) {
+      sendJson(res, 401, { error: "Unauthorized" });
+      return;
+    }
+
+    sendJson(res, 200, trainingManager.stopAll("manual-stop"));
+    return;
+  }
+
   let filePath = null;
 
-  if (pathname === "/" || pathname === "/play" || pathname === "/index.html") {
+  if (pathname === "/") {
+    if (getGameMode() === "training") {
+      if (trainingManager && DEFAULTS.training?.autoStart) {
+        trainingManager.ensureRunning("dashboard-opened");
+      }
+
+      filePath = path.join(__dirname, "training.html");
+    } else {
+      filePath = path.join(__dirname, "index.html");
+    }
+  } else if (pathname === "/play" || pathname === "/index.html") {
     filePath = path.join(__dirname, "index.html");
+  } else if (pathname === "/training" || pathname === "/training.html") {
+    if (
+      trainingManager &&
+      getGameMode() === "training" &&
+      DEFAULTS.training?.autoStart
+    ) {
+      trainingManager.ensureRunning("training-page-opened");
+    }
+
+    filePath = path.join(__dirname, "training.html");
   } else if (pathname === "/defaults" || pathname === "/defaults.html") {
     filePath = path.join(__dirname, "defaults.html");
-  } else if (pathname === "/training" || pathname === "/training.html") {
-    filePath = path.join(__dirname, "training.html");
   } else if (pathname === "/clientNet.js") {
     filePath = path.join(__dirname, "clientNet.js");
   } else if (pathname === "/shared.js") {
@@ -188,6 +262,10 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
+trainingManager = createTrainingManager({
+  serverUrl: `http://127.0.0.1:${PORT}`,
+});
+
 const matches = new Map();
 const socketToRoom = new Map();
 const matchRecords = new Map();
@@ -196,6 +274,7 @@ const queues = {
   multiplayerHumans: [],
   singleplayerHumans: [],
   singleplayerBots: [],
+  trainingBots: [],
 };
 
 const activeBots = new Map();
@@ -259,6 +338,13 @@ function startMatchRecord(game, matchType, socketA, socketB) {
 
   matchLogger.startMatch(matchId, meta);
 
+  const snapshotHz =
+    matchType === "training"
+      ? Math.max(0.2, Number(DEFAULTS.training?.snapshotLogHz) || 2)
+      : 1;
+
+  const snapshotIntervalMs = Math.max(250, Math.floor(1000 / snapshotHz));
+
   const record = {
     matchId,
     roomId: game.roomId,
@@ -289,10 +375,14 @@ function startMatchRecord(game, matchType, socketA, socketB) {
           snapshot,
         });
       }
-    }, 1000),
+    }, snapshotIntervalMs),
   };
 
   matchRecords.set(game.roomId, record);
+
+  if (matchType === "training" && trainingManager) {
+    trainingManager.onTrainingMatchStarted(meta);
+  }
 }
 
 function finishMatchRecord(roomId, result = {}) {
@@ -329,6 +419,14 @@ function finishMatchRecord(roomId, result = {}) {
 
   matchLogger.endMatch(record.matchId, summary);
   matchRecords.delete(roomId);
+
+  if (summary.matchType === "training" && trainingManager) {
+    trainingManager.onTrainingMatchEnded(summary);
+  }
+
+  if (summary.matchType === "singleplayer" && trainingManager) {
+    trainingManager.onSingleplayerMatchEnded(summary);
+  }
 }
 
 function createMatch(socketA, socketB, matchType) {
@@ -384,6 +482,19 @@ function tryPairSingleplayer() {
 
     if (human && bot) {
       createMatch(human, bot, "singleplayer");
+    }
+  }
+}
+
+function tryPairTraining() {
+  cleanQueue("trainingBots");
+
+  while (queues.trainingBots.length >= 2) {
+    const a = shiftQueue("trainingBots");
+    const b = shiftQueue("trainingBots");
+
+    if (a && b) {
+      createMatch(a, b, "training");
     }
   }
 }
@@ -466,8 +577,12 @@ function handleHumanConnection(socket) {
   if (mode === "training") {
     socket.emit("queueStatus", {
       message:
-        "Training mode is active. Switch game.mode to singleplayer or multiplayer in /defaults.",
+        "Training mode is active. Open / or /training for the dashboard, or switch mode in /defaults.",
     });
+
+    if (trainingManager && DEFAULTS.training?.autoStart) {
+      trainingManager.ensureRunning("human-connected-training-mode");
+    }
 
     return;
   }
@@ -486,6 +601,18 @@ function handleBotConnection(socket) {
     });
 
     tryPairSingleplayer();
+
+    return;
+  }
+
+  if (botMode === "training") {
+    pushQueue("trainingBots", socket);
+
+    socket.emit("queueStatus", {
+      message: "Training bot waiting for another training bot...",
+    });
+
+    tryPairTraining();
 
     return;
   }
@@ -572,4 +699,8 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Current game mode: ${getGameMode()}`);
   console.log(`Singleplayer difficulty: ${getSingleplayerDifficulty()}`);
+
+  if (getGameMode() === "training" && DEFAULTS.training?.autoStart) {
+    trainingManager.ensureRunning("server-started-in-training-mode");
+  }
 });
