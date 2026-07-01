@@ -36,6 +36,21 @@ const DEFAULTS = {
     difficulty: "easy", // easy | medium | hard | extreme | machine
   },
 
+  bots: {
+    aggressionLevel: {
+      // 0 = ignore this objective
+      // 5 = normal
+      // 10 = very aggressive
+
+      flagPursuit: 5,
+      flagDefense: 5,
+      baseDefense: 5,
+      basePursuit: 5,
+      recapturingOwnFlag: 5,
+      recapturingEnemyFlag: 5,
+    },
+  },
+
   training: {
     enabled: true,
     autoStart: true,
