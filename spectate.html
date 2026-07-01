@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Neon Babo Spectator</title>
+
+  <style>
+    :root {
+      --bg:#070915;
+      --text:#e9ecff;
+      --muted:#b7bddb;
+      --line:rgba(255,255,255,.14);
+      --panel:rgba(10,14,30,.72);
+      --good:#5cffc1;
+      --bad:#ff5c7c;
+      --accent:#7aa7ff;
+      --warn:#ffd56a;
+    }
+
+    html, body {
+      margin:0;
+      height:100%;
+      overflow:hidden;
+      background:
+        radial-gradient(900px 700px at 20% 10%, rgba(122,167,255,.18), transparent 55%),
+        radial-gradient(800px 700px at 80% 20%, rgba(176,122,255,.14), transparent 55%),
+        var(--bg);
+      color:var(--text);
+      font-family:ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    }
+
+    canvas {
+      position:fixed;
+      inset:0;
+      width:100vw;
+      height:100vh;
+      display:block;
+    }
+
+    .hud {
+      position:fixed;
+      top:14px;
+      left:14px;
+      right:14px;
+      display:flex;
+      gap:12px;
+      justify-content:space-between;
+      align-items:flex-start;
+      pointer-events:none;
+    }
+
+    .panel {
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:16px;
+      box-shadow:0 18px 50px rgba(0,0,0,.45);
+      backdrop-filter:blur(12px);
+      padding:12px 14px;
+      max-width:min(520px, 48vw);
+    }
+
+    .title {
+      font-weight:1000;
+      letter-spacing:.3px;
+      margin-bottom:5px;
+    }
+
+    .tiny {
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.45;
+    }
+
+    .row {
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+      margin-top:8px;
+    }
+
+    .pill {
+      display:inline-flex;
+      align-items:center;
+      gap:7px;
+      padding:6px 9px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.06);
+      font-size:12px;
+      color:var(--muted);
+    }
+
+    .dot {
+      width:9px;
+      height:9px;
+      border-radius:99px;
+      background:var(--accent);
+    }
+
+    .dot.good { background:var(--good); }
+    .dot.bad { background:var(--bad); }
+    .dot.warn { background:var(--warn); }
+
+    a {
+      color:var(--accent);
+      pointer-events:auto;
+      font-weight:800;
+      text-decoration:none;
+    }
+
+    .centerMsg {
+      position:fixed;
+      inset:0;
+      display:grid;
+      place-items:center;
+      pointer-events:none;
+      text-align:center;
+      padding:20px;
+    }
+
+    .card {
+      max-width:640px;
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:20px;
+      box-shadow:0 24px 70px rgba(0,0,0,.55);
+      padding:22px;
+      backdrop-filter:blur(12px);
+    }
+
+    .big {
+      font-size:28px;
+      font-weight:1000;
+      margin-bottom:8px;
+    }
+
+    .hidden {
+      display:none;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="game"></canvas>
+
+  <div class="hud">
+    <div class="panel">
+      <div class="title">Spectator Mode</div>
+      <div class="tiny" id="status">Connecting...</div>
+
+      <div class="row">
+        <span class="pill"><span class="dot good"></span>Bot / P1</span>
+        <span class="pill"><span class="dot bad"></span>Bot / P2</span>
+        <span class="pill"><span class="dot warn"></span>Projectiles</span>
+      </div>
+    </div>
+
+    <div class="panel" style="text-align:right">
+      <div class="title" id="matchTitle">No match yet</div>
+      <div class="tiny" id="matchStats">Waiting for training data...</div>
+      <div class="row" style="justify-content:flex-end">
+        <a href="/training">Training Dashboard</a>
+        <span class="tiny">·</span>
+        <a href="/defaults">Defaults</a>
+        <span class="tiny">·</span>
+        <a href="/play">Play</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="centerMsg" id="centerMsg">
+    <div class="card">
+      <div class="big">Waiting for training match...</div>
+      <div class="tiny">
+        Set <b>game.mode</b> to <b>training</b> in <b>/defaults</b>, then open this page again.
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const ARENA = { w: 2200, h: 1400 };
+      const TAU = Math.PI * 2;
+
+      const WALLS = [
+        { x: 1020, y: 580, w: 160, h: 240 },
+        { x: 520, y: 240, w: 240, h: 140 },
+        { x: 1440, y: 240, w: 240, h: 140 },
+        { x: 520, y: 1020, w: 240, h: 140 },
+        { x: 1440, y: 1020, w: 240, h: 140 },
+        { x: 240, y: 520, w: 140, h: 360 },
+        { x: 1820, y: 520, w: 140, h: 360 },
+        { x: 860, y: 360, w: 120, h: 120 },
+        { x: 1220, y: 360, w: 120, h: 120 },
+        { x: 860, y: 920, w: 120, h: 120 },
+        { x: 1220, y: 920, w: 120, h: 120 },
+        { x: 760, y: 640, w: 70, h: 120 },
+        { x: 1370, y: 640, w: 70, h: 120 },
+      ];
+
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d", { alpha: false });
+
+      const statusEl = document.getElementById("status");
+      const matchTitleEl = document.getElementById("matchTitle");
+      const matchStatsEl = document.getElementById("matchStats");
+      const centerMsg = document.getElementById("centerMsg");
+
+      let W = 0;
+      let H = 0;
+      let DPR = 1;
+
+      let latestSnapshot = null;
+      let latestMeta = null;
+      let latestTrainingStatus = null;
+
+      function resize() {
+        DPR = Math.min(2, window.devicePixelRatio || 1);
+        W = Math.floor(window.innerWidth);
+        H = Math.floor(window.innerHeight);
+
+        canvas.width = Math.floor(W * DPR);
+        canvas.height = Math.floor(H * DPR);
+        canvas.style.width = W + "px";
+        canvas.style.height = H + "px";
+
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      }
+
+      window.addEventListener("resize", resize, { passive:true });
+      resize();
+
+      function worldScale() {
+        const margin = 70;
+        const scale = Math.min(
+          (W - margin * 2) / ARENA.w,
+          (H - margin * 2) / ARENA.h
+        );
+
+        const safeScale = Math.max(0.1, scale);
+
+        return {
+          scale: safeScale,
+          ox: (W - ARENA.w * safeScale) / 2,
+          oy: (H - ARENA.h * safeScale) / 2,
+        };
+      }
+
+      function sxy(x, y) {
+        const t = worldScale();
+
+        return {
+          x: t.ox + x * t.scale,
+          y: t.oy + y * t.scale,
+          scale: t.scale,
+        };
+      }
+
+      function fmt(n) {
+        if (!Number.isFinite(n)) return "—";
+        if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+        if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+        return String(Math.floor(n));
+      }
+
+      function clear() {
+        ctx.fillStyle = "#070915";
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      function roundRect(c, x, y, w, h, r) {
+        const rr = Math.min(r, w / 2, h / 2);
+
+        c.beginPath();
+        c.moveTo(x + rr, y);
+        c.arcTo(x + w, y, x + w, y + h, rr);
+        c.arcTo(x + w, y + h, x, y + h, rr);
+        c.arcTo(x, y + h, x, y, rr);
+        c.arcTo(x, y, x + w, y, rr);
+        c.closePath();
+      }
+
+      function drawArena() {
+        const t = worldScale();
+        const x = t.ox;
+        const y = t.oy;
+        const w = ARENA.w * t.scale;
+        const h = ARENA.h * t.scale;
+
+        ctx.fillStyle = "rgba(255,255,255,.04)";
+        ctx.fillRect(x, y, w, h);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, w, h);
+        ctx.clip();
+
+        ctx.globalAlpha = 0.16;
+        ctx.strokeStyle = "rgba(255,255,255,.16)";
+        ctx.lineWidth = 1;
+
+        const step = 80;
+
+        for (let gx = 0; gx <= ARENA.w; gx += step) {
+          const a = sxy(gx, 0);
+          const b = sxy(gx, ARENA.h);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+
+        for (let gy = 0; gy <= ARENA.h; gy += step) {
+          const a = sxy(0, gy);
+          const b = sxy(ARENA.w, gy);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+
+        ctx.globalAlpha = 1;
+
+        for (const wall of WALLS) {
+          const p = sxy(wall.x, wall.y);
+          ctx.fillStyle = "rgba(10,14,30,.86)";
+          ctx.strokeStyle = "rgba(255,255,255,.18)";
+          ctx.lineWidth = 2;
+          roundRect(
+            ctx,
+            p.x,
+            p.y,
+            wall.w * t.scale,
+            wall.h * t.scale,
+            12
+          );
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        ctx.restore();
+
+        ctx.strokeStyle = "rgba(255,255,255,.25)";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, w, h);
+      }
+
+      function drawFlags(snapshot) {
+        const flags = snapshot?.flags;
+        if (!flags) return;
+
+        for (const team of ["p1", "p2"]) {
+          const flag = flags[team];
+          if (!flag) continue;
+
+          const p = sxy(flag.x, flag.y);
+          const size = Math.max(8, 18 * p.scale);
+          const color = team === "p1"
+            ? "rgba(92,255,193,.95)"
+            : "rgba(255,92,124,.95)";
+
+          ctx.save();
+          ctx.translate(p.x, p.y);
+
+          ctx.strokeStyle = "rgba(255,255,255,.82)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(0, size * 0.8);
+          ctx.lineTo(0, -size * 0.9);
+          ctx.stroke();
+
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(0, -size * 0.9);
+          ctx.lineTo(size, -size * 0.45);
+          ctx.lineTo(0, 0);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.restore();
+        }
+      }
+
+      function drawProjectiles(snapshot) {
+        const t = worldScale();
+
+        for (const b of snapshot?.bullets || []) {
+          const p = sxy(b.x, b.y);
+          ctx.fillStyle = "rgba(233,236,255,.92)";
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, Math.max(2, b.r * t.scale), 0, TAU);
+          ctx.fill();
+        }
+
+        for (const b of snapshot?.balls || []) {
+          const p = sxy(b.x, b.y);
+          ctx.fillStyle = "rgba(255,156,74,.95)";
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, Math.max(3, b.r * t.scale), 0, TAU);
+          ctx.fill();
+        }
+
+        for (const m of snapshot?.molotovs || []) {
+          const p = sxy(m.x, m.y);
+          ctx.fillStyle = "rgba(255,213,106,.95)";
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, Math.max(4, 10 * t.scale), 0, TAU);
+          ctx.fill();
+        }
+
+        for (const g of snapshot?.grenades || []) {
+          const p = sxy(g.x, g.y);
+          ctx.fillStyle = "rgba(180,255,210,.95)";
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, Math.max(4, 9 * t.scale), 0, TAU);
+          ctx.fill();
+        }
+
+        for (const beam of snapshot?.sniperBeams || []) {
+          const a = sxy(beam.x1, beam.y1);
+          const b = sxy(beam.x2, beam.y2);
+
+          ctx.strokeStyle = beam.hit
+            ? "rgba(130,220,255,.98)"
+            : "rgba(122,167,255,.82)";
+
+          ctx.lineWidth = Math.max(2, 4 * t.scale);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+
+        for (const k of snapshot?.knifeBursts || []) {
+          const p = sxy(k.x, k.y);
+          ctx.strokeStyle = "rgba(255,255,255,.55)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, Math.max(6, k.radius * t.scale), 0, TAU);
+          ctx.stroke();
+        }
+      }
+
+      function drawPlayer(player) {
+        if (!player) return;
+
+        const t = worldScale();
+        const p = sxy(player.x, player.y);
+
+        const isP1 = player.team === "p1";
+        const color = isP1
+          ? "rgba(92,255,193,.95)"
+          : "rgba(255,92,124,.95)";
+
+        const r = Math.max(6, player.r * t.scale);
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, TAU);
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(122,167,255,.45)";
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, r + 12 * t.scale, player.aim - 0.25, player.aim + 0.25);
+        ctx.closePath();
+        ctx.fill();
+
+        if (player.blocking) {
+          ctx.strokeStyle = "rgba(122,167,255,.95)";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(0, 0, r + 12 * t.scale, 0, TAU);
+          ctx.stroke();
+        }
+
+        ctx.restore();
+
+        const hpPct = player.hp / Math.max(1, player.hpMax);
+        const barW = Math.max(32, 90 * t.scale);
+        const barH = 7;
+
+        ctx.fillStyle = "rgba(0,0,0,.45)";
+        ctx.fillRect(p.x - barW / 2, p.y - r - 22, barW, barH);
+
+        ctx.fillStyle = color;
+        ctx.fillRect(p.x - barW / 2, p.y - r - 22, barW * hpPct, barH);
+
+        ctx.fillStyle = "rgba(233,236,255,.92)";
+        ctx.font = "700 12px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(
+          `${player.team.toUpperCase()} ${fmt(player.hp)}/${fmt(player.hpMax)}`,
+          p.x,
+          p.y - r - 30
+        );
+      }
+
+      function drawSnapshot(snapshot) {
+        drawArena();
+        drawFlags(snapshot);
+        drawProjectiles(snapshot);
+
+        const players = Object.values(snapshot?.players || {});
+
+        players.sort((a, b) => a.slot - b.slot);
+
+        for (const p of players) {
+          drawPlayer(p);
+        }
+      }
+
+      function draw() {
+        clear();
+
+        if (latestSnapshot) {
+          centerMsg.classList.add("hidden");
+          drawSnapshot(latestSnapshot);
+        } else {
+          drawArena();
+          centerMsg.classList.remove("hidden");
+        }
+
+        requestAnimationFrame(draw);
+      }
+
+      function renderStatus() {
+        if (!latestTrainingStatus) return;
+
+        const s = latestTrainingStatus;
+
+        statusEl.textContent =
+          `Mode: ${s.mode || "—"} · Active: ${s.active ? "yes" : "no"} · ` +
+          `Used today: ${((s.usedMinutesToday || 0)).toFixed(2)} / ${(s.limitMinutes || 0).toFixed(0)} min`;
+
+        matchStatsEl.textContent =
+          `Matches today: ${s.matchesToday || 0} · ` +
+          `Bot1 wins: ${s.bot1WinsToday || 0} · ` +
+          `Bot2 wins: ${s.bot2WinsToday || 0} · ` +
+          `Draws/timeouts: ${s.drawsToday || 0}`;
+      }
+
+      const socket = io({
+        transports: ["websocket", "polling"],
+        query: {
+          spectator: "1"
+        }
+      });
+
+      socket.on("connect", () => {
+        statusEl.textContent = "Connected. Waiting for training snapshot...";
+      });
+
+      socket.on("disconnect", () => {
+        statusEl.textContent = "Disconnected.";
+      });
+
+      socket.on("spectatorStatus", (status) => {
+        latestTrainingStatus = status.training || null;
+        renderStatus();
+      });
+
+      socket.on("spectatorSnapshot", (data) => {
+        latestMeta = data.meta || null;
+        latestSnapshot = data.snapshot || null;
+        latestTrainingStatus = data.training || latestTrainingStatus;
+
+        if (latestMeta?.roomId) {
+          matchTitleEl.textContent = latestMeta.roomId;
+        }
+
+        renderStatus();
+      });
+
+      requestAnimationFrame(draw);
+    })();
+  </script>
+</body>
+</html>
