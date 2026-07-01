@@ -1,7 +1,7 @@
 {
   "name": "neon-babo-game",
-  "version": "2.0.0",
-  "description": "Neon Babo Duel multiplayer server-authoritative rewrite",
+  "version": "2.1.0",
+  "description": "Neon Babo Duel multiplayer server-authoritative rewrite with AI training",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,6 +10,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1"
   }
 }
