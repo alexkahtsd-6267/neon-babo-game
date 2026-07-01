@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { getManualEntries } = require("./manualLearningStore");
 
 const BRAIN_FILE = path.join(__dirname, "bots", "botBrain.json");
 
@@ -33,6 +34,8 @@ function getLearningLog({ limit = 100 } = {}) {
 
     version: brain.version || "unknown",
     profiles: brain.profiles || {},
+
+    manualEntries: getManualEntries({ limit: safeLimit }),
 
     historyCount: history.length,
     history: history.slice(-safeLimit).reverse(),
