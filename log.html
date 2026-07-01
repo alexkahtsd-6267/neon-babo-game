@@ -76,6 +76,29 @@
       filter:brightness(1.12);
     }
 
+    select, input, textarea {
+      background:#080b18;
+      color:var(--text);
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:11px 12px;
+      font-size:15px;
+      font-weight:700;
+      width:100%;
+      outline:none;
+    }
+
+    textarea {
+      resize:vertical;
+      min-height:110px;
+      line-height:1.45;
+    }
+
+    label {
+      display:block;
+      margin-bottom:6px;
+    }
+
     .status {
       color:var(--good);
       font-weight:900;
@@ -199,12 +222,20 @@
       grid-column:1 / -1;
     }
 
+    .formGrid {
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:14px;
+      margin-bottom:14px;
+    }
+
     @media (max-width:900px) {
       body {
         padding:18px;
       }
 
-      .grid {
+      .grid,
+      .formGrid {
         grid-template-columns:1fr;
       }
 
@@ -218,7 +249,7 @@
 <body>
   <h1>Neon Babo Learning Log</h1>
   <div class="sub">
-    Shows the bot brain, current learned settings, and learning history from training and singleplayer matches.
+    Shows the bot brain, current learned settings, learning history, and manual coaching entries.
   </div>
 
   <div class="toolbar">
@@ -231,6 +262,44 @@
     <span id="status" class="status">Loading...</span>
   </div>
 
+  <div class="card" style="margin-bottom:20px;">
+    <div class="cardHead">Add Bot Coaching Entry</div>
+    <div class="cardBody">
+      <div class="formGrid">
+        <div>
+          <label class="key">Problem type</label>
+          <select id="entryCategory">
+            <option value="flag_defense">1. Not defending flags well enough</option>
+            <option value="flag_capture">2. Not going in to capture flags</option>
+            <option value="base_defense_when_enemy_has_flag">3. Not defending base when enemy has flag</option>
+            <option value="custom_note">Custom note only</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="key">Title</label>
+          <input id="entryTitle" placeholder="Example: Bots need better flag defense">
+        </div>
+      </div>
+
+      <div>
+        <label class="key">Note</label>
+        <textarea id="entryNote" placeholder="Write what the bots are doing wrong and what they should improve..."></textarea>
+      </div>
+
+      <div style="margin-top:12px;">
+        <label class="key" style="display:flex; align-items:center; gap:10px;">
+          <input id="entryApply" type="checkbox" checked style="width:auto;">
+          Apply this directly to Bot 1 and Bot 2 brain
+        </label>
+      </div>
+
+      <div style="margin-top:14px;">
+        <button id="saveEntryBtn">Save Coaching Entry</button>
+      </div>
+    </div>
+  </div>
+
   <div id="app"></div>
 
   <script>
@@ -238,6 +307,7 @@
     const statusEl = document.getElementById("status");
     const reloadBtn = document.getElementById("reloadBtn");
     const autoBtn = document.getElementById("autoBtn");
+    const saveEntryBtn = document.getElementById("saveEntryBtn");
 
     let autoRefresh = false;
     let autoTimer = null;
@@ -337,14 +407,14 @@
 
       return history.map((entry, index) => {
         const time = entry.timestamp || entry.time || entry.endedAt || "unknown time";
-        const matchId = entry.matchId || entry.summary?.matchId || "unknown match";
+        const matchId = entry.matchId || entry.summary?.matchId || entry.manualEntryId || "manual / unknown";
         const matchType = entry.matchType || entry.summary?.matchType || "unknown";
         const winner =
           entry.winner?.botName ||
           entry.winnerProfile ||
           entry.winner ||
           entry.summary?.winnerSocketId ||
-          "draw / unknown";
+          "draw / manual / unknown";
 
         const mutatedProfiles = entry.mutatedProfiles || entry.mutations || [];
 
@@ -358,6 +428,8 @@
               Time: ${esc(time)}<br>
               Winner: ${esc(typeof winner === "object" ? JSON.stringify(winner) : winner)}<br>
               Result: ${esc(entry.result || entry.reason || entry.summary?.reason || "ended")}
+              ${entry.title ? `<br>Title: ${esc(entry.title)}` : ""}
+              ${entry.note ? `<br>Note: ${esc(entry.note)}` : ""}
             </div>
 
             ${
@@ -378,6 +450,80 @@
       }).join("");
     }
 
+    function manualEntriesHtml(entries) {
+      if (!entries || !entries.length) {
+        return `<div class="muted">No manual coaching entries yet.</div>`;
+      }
+
+      return entries.map((entry, index) => `
+        <div class="historyItem">
+          <div class="historyTitle">
+            ${index + 1}. ${esc(entry.title || entry.categoryLabel || "Manual entry")}
+          </div>
+
+          <div class="muted">
+            Time: ${esc(entry.timestamp || "")}<br>
+            Category: ${esc(entry.categoryLabel || entry.category || "")}<br>
+            Applied to brain: ${entry.applyToBrain ? "yes" : "no"}
+          </div>
+
+          <div class="muted" style="margin-top:8px;">
+            ${esc(entry.note || "")}
+          </div>
+
+          ${
+            entry.appliedProfiles?.length
+              ? entry.appliedProfiles.map((p) => `
+                  <div class="changes">
+                    <div class="muted"><b>${esc(p.profileName)}</b></div>
+                    ${(p.changes || []).map(changeHtml).join("")}
+                  </div>
+                `).join("")
+              : ""
+          }
+        </div>
+      `).join("");
+    }
+
+    async function saveManualEntry() {
+      const category = document.getElementById("entryCategory").value;
+      const title = document.getElementById("entryTitle").value;
+      const note = document.getElementById("entryNote").value;
+      const applyToBrain = document.getElementById("entryApply").checked;
+
+      try {
+        setStatus("Saving coaching entry...");
+
+        const res = await fetch("/api/log/entry", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            category,
+            title,
+            note,
+            applyToBrain,
+            profiles: ["bot1", "bot2"],
+          }),
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Could not save coaching entry");
+        }
+
+        document.getElementById("entryTitle").value = "";
+        document.getElementById("entryNote").value = "";
+
+        setStatus("Coaching entry saved");
+        await loadLog();
+      } catch (err) {
+        console.error(err);
+        setStatus(err.message || "Save failed", true);
+      }
+    }
+
     async function loadLog() {
       try {
         setStatus("Loading...");
@@ -394,6 +540,7 @@
 
         const profiles = data.profiles || {};
         const history = data.history || [];
+        const manualEntries = data.manualEntries || [];
 
         app.innerHTML = `
           <div class="grid">
@@ -413,6 +560,10 @@
                   <div class="value">${esc(data.historyCount || 0)}</div>
                 </div>
                 <div class="statRow">
+                  <div class="key">Manual entries</div>
+                  <div class="value">${esc(manualEntries.length)}</div>
+                </div>
+                <div class="statRow">
                   <div class="key">Generated at</div>
                   <div class="value">${esc(data.generatedAt || "")}</div>
                 </div>
@@ -421,6 +572,13 @@
 
             ${profileHtml("Bot 1 Brain", profiles.bot1)}
             ${profileHtml("Bot 2 Brain", profiles.bot2)}
+
+            <div class="card full">
+              <div class="cardHead">Manual Coaching Entries</div>
+              <div class="cardBody">
+                ${manualEntriesHtml(manualEntries)}
+              </div>
+            </div>
 
             <div class="card full">
               <div class="cardHead">Learning History</div>
@@ -464,6 +622,8 @@
       autoRefresh = !autoRefresh;
       updateAutoButton();
     });
+
+    saveEntryBtn.addEventListener("click", saveManualEntry);
 
     updateAutoButton();
     loadLog();
