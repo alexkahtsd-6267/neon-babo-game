@@ -1,11 +1,19 @@
+const shared = require("../shared");
+
 const {
   angleTo,
   dist,
   hasLineOfSight,
   clamp,
-  FLAG_BASES,
-  DEFAULTS,
-} = require("../shared");
+} = shared;
+
+const WALLS = Array.isArray(shared.WALLS) ? shared.WALLS : [];
+const ARENA = shared.ARENA || { w: 2200, h: 1400 };
+const FLAG_BASES = shared.FLAG_BASES || {
+  p1: { x: 150, y: 700 },
+  p2: { x: 2050, y: 700 },
+};
+const DEFAULTS = shared.DEFAULTS || {};
 
 function makeMemory() {
   return {
@@ -22,6 +30,13 @@ function makeMemory() {
     dashPulseUntil: 0,
     nextKnifeAt: 0,
     nextMolotovAt: 0,
+
+    currentWaypoint: null,
+    waypointUntil: 0,
+
+    lastX: null,
+    lastY: null,
+    lastProgressAt: Date.now(),
   };
 }
 
@@ -43,12 +58,10 @@ function getAggressionLevel(name, fallback = 5) {
 }
 
 function levelScale(level) {
-  // 0 = 0x, 5 = 1x, 10 = 2x
   return clamp(level / 5, 0, 2);
 }
 
 function radiusScale(level) {
-  // 0 = smaller awareness, 5 = normal, 10 = wider awareness
   return clamp(0.5 + level / 10, 0.5, 1.5);
 }
 
@@ -176,6 +189,171 @@ function getPointFromObject(obj, fallback = null) {
   return fallback;
 }
 
+function pointInsideWall(x, y, padding = 0) {
+  for (const wall of WALLS) {
+    if (
+      x >= wall.x - padding &&
+      x <= wall.x + wall.w + padding &&
+      y >= wall.y - padding &&
+      y <= wall.y + wall.h + padding
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function pointInArena(x, y, padding = 30) {
+  return (
+    x >= padding &&
+    y >= padding &&
+    x <= ARENA.w - padding &&
+    y <= ARENA.h - padding
+  );
+}
+
+function getClosestPointOnRect(x, y, rect) {
+  return {
+    x: clamp(x, rect.x, rect.x + rect.w),
+    y: clamp(y, rect.y, rect.y + rect.h),
+  };
+}
+
+function getWallAvoidanceVector(x, y, radius = 95) {
+  let ax = 0;
+  let ay = 0;
+
+  for (const wall of WALLS) {
+    const closest = getClosestPointOnRect(x, y, wall);
+    let dx = x - closest.x;
+    let dy = y - closest.y;
+    let d = Math.hypot(dx, dy);
+
+    if (d < 0.001) {
+      const centerX = wall.x + wall.w / 2;
+      const centerY = wall.y + wall.h / 2;
+
+      dx = x - centerX;
+      dy = y - centerY;
+      d = Math.hypot(dx, dy) || 1;
+    }
+
+    if (d < radius) {
+      const strength = (radius - d) / radius;
+
+      ax += (dx / d) * strength;
+      ay += (dy / d) * strength;
+    }
+  }
+
+  return { x: ax, y: ay };
+}
+
+function getWallWaypoints(padding = 85) {
+  const points = [];
+
+  for (const wall of WALLS) {
+    const left = wall.x - padding;
+    const right = wall.x + wall.w + padding;
+    const top = wall.y - padding;
+    const bottom = wall.y + wall.h + padding;
+    const midX = wall.x + wall.w / 2;
+    const midY = wall.y + wall.h / 2;
+
+    points.push(
+      { x: left, y: top },
+      { x: right, y: top },
+      { x: left, y: bottom },
+      { x: right, y: bottom },
+
+      { x: midX, y: top },
+      { x: midX, y: bottom },
+      { x: left, y: midY },
+      { x: right, y: midY }
+    );
+  }
+
+  return points.filter((p) => {
+    return (
+      pointInArena(p.x, p.y, 35) &&
+      !pointInsideWall(p.x, p.y, 24)
+    );
+  });
+}
+
+function getNavigationPoint(me, target, memory) {
+  if (!target) return null;
+
+  const direct = {
+    x: target.x,
+    y: target.y,
+    reason: target.reason || "direct",
+    isWaypoint: false,
+  };
+
+  if (hasLineOfSight(me.x, me.y, target.x, target.y)) {
+    memory.currentWaypoint = null;
+    memory.waypointUntil = 0;
+    return direct;
+  }
+
+  const now = Date.now();
+
+  if (
+    memory.currentWaypoint &&
+    now < memory.waypointUntil &&
+    dist(me.x, me.y, memory.currentWaypoint.x, memory.currentWaypoint.y) > 45 &&
+    hasLineOfSight(me.x, me.y, memory.currentWaypoint.x, memory.currentWaypoint.y)
+  ) {
+    return memory.currentWaypoint;
+  }
+
+  const waypoints = getWallWaypoints(90);
+
+  let bestTwoStep = null;
+  let bestVisible = null;
+
+  for (const point of waypoints) {
+    const visibleFromMe = hasLineOfSight(me.x, me.y, point.x, point.y);
+
+    if (!visibleFromMe) continue;
+
+    const visibleToTarget = hasLineOfSight(point.x, point.y, target.x, target.y);
+
+    const score =
+      dist(me.x, me.y, point.x, point.y) +
+      dist(point.x, point.y, target.x, target.y);
+
+    const candidate = {
+      x: point.x,
+      y: point.y,
+      score,
+      reason: `waypoint around wall → ${target.reason || "target"}`,
+      isWaypoint: true,
+    };
+
+    if (visibleToTarget) {
+      if (!bestTwoStep || candidate.score < bestTwoStep.score) {
+        bestTwoStep = candidate;
+      }
+    }
+
+    if (!bestVisible || candidate.score < bestVisible.score) {
+      bestVisible = candidate;
+    }
+  }
+
+  const chosen = bestTwoStep || bestVisible || direct;
+
+  if (chosen.isWaypoint) {
+    memory.currentWaypoint = chosen;
+    memory.waypointUntil = now + 900;
+  }
+
+  return chosen;
+}
+
 function getBasePoint(team, flag) {
   const base = FLAG_BASES?.[team] || null;
 
@@ -284,6 +462,26 @@ function getTacticalTarget(snapshot, me, enemy, mySocketId, enemySocketId, cfg) 
   }
 
   return null;
+}
+
+function updateStuckState(memory, me, now) {
+  if (memory.lastX === null || memory.lastY === null) {
+    memory.lastX = me.x;
+    memory.lastY = me.y;
+    memory.lastProgressAt = now;
+    return false;
+  }
+
+  const moved = dist(me.x, me.y, memory.lastX, memory.lastY);
+
+  if (moved > 7) {
+    memory.lastX = me.x;
+    memory.lastY = me.y;
+    memory.lastProgressAt = now;
+    return false;
+  }
+
+  return now - memory.lastProgressAt > 900;
 }
 
 function vectorToKeys(x, y, movementMultiplier = 1) {
@@ -395,27 +593,47 @@ function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
   );
 
   if (tacticalTarget && tacticalTarget.weight > 0) {
-    const tacticalAngle = angleTo(
-      me.x,
-      me.y,
-      tacticalTarget.x,
-      tacticalTarget.y
-    );
+    const navigationTarget = getNavigationPoint(me, tacticalTarget, memory);
 
-    const tacticalDist = dist(
-      me.x,
-      me.y,
-      tacticalTarget.x,
-      tacticalTarget.y
-    );
+    if (navigationTarget) {
+      const tacticalAngle = angleTo(
+        me.x,
+        me.y,
+        navigationTarget.x,
+        navigationTarget.y
+      );
 
-    const tacticalStrength =
-      tacticalTarget.weight *
-      clamp(tacticalDist / 420, 0.25, 1.4);
+      const tacticalDist = dist(
+        me.x,
+        me.y,
+        tacticalTarget.x,
+        tacticalTarget.y
+      );
 
-    moveX += Math.cos(tacticalAngle) * tacticalStrength;
-    moveY += Math.sin(tacticalAngle) * tacticalStrength;
+      const tacticalStrength =
+        tacticalTarget.weight *
+        clamp(tacticalDist / 420, 0.25, 1.4);
+
+      moveX += Math.cos(tacticalAngle) * tacticalStrength;
+      moveY += Math.sin(tacticalAngle) * tacticalStrength;
+
+      const stuck = updateStuckState(memory, me, now);
+
+      if (stuck) {
+        moveX += -Math.sin(tacticalAngle) * memory.strafeDir * 1.25;
+        moveY += Math.cos(tacticalAngle) * memory.strafeDir * 1.25;
+        memory.waypointUntil = 0;
+      }
+    }
+  } else {
+    memory.currentWaypoint = null;
+    memory.waypointUntil = 0;
   }
+
+  const avoid = getWallAvoidanceVector(me.x, me.y, 105);
+
+  moveX += avoid.x * 1.15;
+  moveY += avoid.y * 1.15;
 
   const mag = Math.hypot(moveX, moveY) || 1;
 
@@ -426,7 +644,8 @@ function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
   );
 
   const flags = snapshot?.flags || {};
-  const ownFlag = flags[me.team];
+  const myTeam = me.team || "p1";
+  const ownFlag = flags[myTeam];
   const enemyHasMyFlag = flagCarrierIs(ownFlag, enemySocketId);
 
   const enemyShooting = !!enemy.shooting;
