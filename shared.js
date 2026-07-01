@@ -37,7 +37,26 @@ const DEFAULTS = {
   },
 
   bots: {
-    brainMode: "basic", // basic | advanced
+    // 100 = always basic
+    // 50 = 50% basic / 50% advanced
+    // 0 = always advanced
+    basicBrainChancePercent: 50,
+
+    bufferMethod: {
+      enabled: true,
+      durationSeconds: 3,
+      stuckAggressionLevel: 2,
+    },
+
+    humanBrain: {
+      // 0 = off
+      // 10 = frequent random human-like events
+      randomizedEvents: 0,
+
+      // 0 = no added imperfection
+      // 10 = more aiming/movement/action mistakes
+      imperfections: 0,
+    },
 
     aggressionLevel: {
       // 0 = ignore this objective
