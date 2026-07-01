@@ -35,6 +35,21 @@ function getGameMode() {
   return "multiplayer";
 }
 
+function getSingleplayerDifficulty() {
+  const raw = String(DEFAULTS.singleplayer?.difficulty || "easy")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+
+  if (raw === "1" || raw === "easy") return "easy";
+  if (raw === "2" || raw === "medium") return "medium";
+  if (raw === "3" || raw === "hard") return "hard";
+  if (raw === "4" || raw === "extreme" || raw === "extremelyhard") return "extreme";
+  if (raw === "5" || raw === "machine" || raw === "machinelevelhard") return "machine";
+
+  return "easy";
+}
+
 function serveFile(res, filePath) {
   fs.readFile(filePath, (err, content) => {
     if (err) {
@@ -119,7 +134,9 @@ const server = http.createServer(async (req, res) => {
         const body = await readJsonBody(req);
         const updated = updateDefaults(body);
 
-        console.log("Defaults updated. Current mode:", getGameMode());
+        console.log("Defaults updated.");
+        console.log("Current mode:", getGameMode());
+        console.log("Singleplayer difficulty:", getSingleplayerDifficulty());
 
         sendJson(res, 200, updated);
       } catch (err) {
@@ -138,6 +155,8 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 200, {
       mode: getGameMode(),
       rawMode: DEFAULTS.game?.mode,
+      singleplayerDifficulty: getSingleplayerDifficulty(),
+      rawSingleplayerDifficulty: DEFAULTS.singleplayer?.difficulty,
     });
     return;
   }
@@ -193,6 +212,7 @@ function socketMeta(socket) {
     botMode: socket.data.botMode || null,
     profileName: socket.data.profileName || null,
     runId: socket.data.runId || null,
+    difficulty: socket.data.difficulty || null,
   };
 }
 
@@ -370,15 +390,18 @@ function tryPairSingleplayer() {
 
 function spawnSingleplayerBotForHuman(humanSocketId) {
   const botId = `single_bot_${humanSocketId}_${Date.now()}`;
+  const difficulty = getSingleplayerDifficulty();
 
   console.log("Spawning singleplayer bot:", botId);
+  console.log("Singleplayer difficulty:", difficulty);
 
   const bot = createBotClient({
     serverUrl: `http://127.0.0.1:${PORT}`,
-    botName: "Singleplayer Bot",
+    botName: `Singleplayer Bot (${difficulty})`,
     botMode: "singleplayer",
     profileName: "bot1",
     runId: botId,
+    difficulty,
   });
 
   activeBots.set(botId, bot);
@@ -393,7 +416,11 @@ function spawnSingleplayerBotForHuman(humanSocketId) {
 
   setTimeout(() => {
     if (!socketToRoom.has(humanSocketId)) {
-      console.log("Singleplayer bot did not pair quickly. Human still waiting:", humanSocketId);
+      console.log(
+        "Singleplayer bot did not pair quickly. Human still waiting:",
+        humanSocketId
+      );
+
       tryPairSingleplayer();
     }
   }, 2500);
@@ -407,10 +434,12 @@ function handleHumanConnection(socket) {
   console.log("Human connected in mode:", mode, socket.id);
 
   if (mode === "singleplayer") {
+    const difficulty = getSingleplayerDifficulty();
+
     pushQueue("singleplayerHumans", socket);
 
     socket.emit("queueStatus", {
-      message: "Starting singleplayer AI opponent...",
+      message: `Starting singleplayer AI opponent. Difficulty: ${difficulty}`,
     });
 
     spawnSingleplayerBotForHuman(socket.id);
@@ -470,6 +499,7 @@ io.on("connection", (socket) => {
   socket.data.botMode = String(socket.handshake.query?.botMode || "");
   socket.data.profileName = String(socket.handshake.query?.profileName || "");
   socket.data.runId = String(socket.handshake.query?.runId || "");
+  socket.data.difficulty = String(socket.handshake.query?.difficulty || "");
 
   socket.on("pingCheck", (sentAt) => {
     socket.emit("pongCheck", sentAt);
@@ -505,7 +535,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    console.log(socket.data.isBot ? "Bot disconnected:" : "Player disconnected:", socket.id);
+    console.log(
+      socket.data.isBot ? "Bot disconnected:" : "Player disconnected:",
+      socket.id
+    );
 
     removeFromQueues(socket.id);
 
@@ -538,4 +571,5 @@ io.on("connection", (socket) => {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Current game mode: ${getGameMode()}`);
+  console.log(`Singleplayer difficulty: ${getSingleplayerDifficulty()}`);
 });
