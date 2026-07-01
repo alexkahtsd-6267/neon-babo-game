@@ -146,6 +146,9 @@ const server = http.createServer(async (req, res) => {
             trainingManager.ensureRunning("defaults-updated");
           } else {
             trainingManager.stopAll("mode changed away from training");
+            latestSpectatorSnapshot = null;
+            latestSpectatorMeta = null;
+            broadcastSpectatorStatus();
           }
         }
 
@@ -169,6 +172,11 @@ const server = http.createServer(async (req, res) => {
       singleplayerDifficulty: getSingleplayerDifficulty(),
       rawSingleplayerDifficulty: DEFAULTS.singleplayer?.difficulty,
     });
+    return;
+  }
+
+  if (pathname === "/api/spectate") {
+    sendJson(res, 200, getSpectatorStatus());
     return;
   }
 
@@ -213,7 +221,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    sendJson(res, 200, trainingManager.stopAll("manual-stop"));
+    const status = trainingManager.stopAll("manual-stop");
+    broadcastSpectatorStatus();
+
+    sendJson(res, 200, status);
     return;
   }
 
@@ -231,6 +242,16 @@ const server = http.createServer(async (req, res) => {
     }
   } else if (pathname === "/play" || pathname === "/index.html") {
     filePath = path.join(__dirname, "index.html");
+  } else if (pathname === "/spectate" || pathname === "/spectate.html") {
+    if (
+      trainingManager &&
+      getGameMode() === "training" &&
+      DEFAULTS.training?.autoStart
+    ) {
+      trainingManager.ensureRunning("spectate-page-opened");
+    }
+
+    filePath = path.join(__dirname, "spectate.html");
   } else if (pathname === "/training" || pathname === "/training.html") {
     if (
       trainingManager &&
@@ -270,6 +291,11 @@ const matches = new Map();
 const socketToRoom = new Map();
 const matchRecords = new Map();
 
+const SPECTATOR_ROOM = "spectators";
+
+let latestSpectatorSnapshot = null;
+let latestSpectatorMeta = null;
+
 const queues = {
   multiplayerHumans: [],
   singleplayerHumans: [],
@@ -283,10 +309,60 @@ function makeRoomId(a, b) {
   return `match_${a}_${b}_${Date.now()}`;
 }
 
+function getSpectatorStatus() {
+  return {
+    mode: getGameMode(),
+    hasSnapshot: !!latestSpectatorSnapshot,
+    roomId: latestSpectatorMeta?.roomId || null,
+    meta: latestSpectatorMeta,
+    training: trainingManager ? trainingManager.getStatus() : null,
+  };
+}
+
+function broadcastSpectatorStatus() {
+  io.to(SPECTATOR_ROOM).emit("spectatorStatus", getSpectatorStatus());
+}
+
+function broadcastSpectatorSnapshot(meta, snapshot) {
+  latestSpectatorMeta = meta;
+  latestSpectatorSnapshot = snapshot;
+
+  io.to(SPECTATOR_ROOM).emit("spectatorSnapshot", {
+    meta: latestSpectatorMeta,
+    snapshot: latestSpectatorSnapshot,
+    training: trainingManager ? trainingManager.getStatus() : null,
+  });
+}
+
+function handleSpectatorConnection(socket) {
+  socket.join(SPECTATOR_ROOM);
+
+  console.log("Spectator connected:", socket.id);
+
+  socket.emit("spectatorStatus", getSpectatorStatus());
+
+  if (latestSpectatorSnapshot) {
+    socket.emit("spectatorSnapshot", {
+      meta: latestSpectatorMeta,
+      snapshot: latestSpectatorSnapshot,
+      training: trainingManager ? trainingManager.getStatus() : null,
+    });
+  }
+
+  if (
+    trainingManager &&
+    getGameMode() === "training" &&
+    DEFAULTS.training?.autoStart
+  ) {
+    trainingManager.ensureRunning("spectator-connected");
+  }
+}
+
 function socketMeta(socket) {
   return {
     id: socket.id,
     isBot: !!socket.data.isBot,
+    isSpectator: !!socket.data.isSpectator,
     botName: socket.data.botName || null,
     botMode: socket.data.botMode || null,
     profileName: socket.data.profileName || null,
@@ -366,6 +442,10 @@ function startMatchRecord(game, matchType, socketA, socketB) {
 
       if (snapshot) {
         matchLogger.logEvent(matchId, "world.snapshot", snapshot);
+
+        if (matchType === "training") {
+          broadcastSpectatorSnapshot(meta, snapshot);
+        }
       }
 
       if (game.state?.ended || snapshot?.winner) {
@@ -381,7 +461,11 @@ function startMatchRecord(game, matchType, socketA, socketB) {
   matchRecords.set(game.roomId, record);
 
   if (matchType === "training" && trainingManager) {
+    latestSpectatorMeta = meta;
+    latestSpectatorSnapshot = null;
+
     trainingManager.onTrainingMatchStarted(meta);
+    broadcastSpectatorStatus();
   }
 }
 
@@ -422,6 +506,7 @@ function finishMatchRecord(roomId, result = {}) {
 
   if (summary.matchType === "training" && trainingManager) {
     trainingManager.onTrainingMatchEnded(summary);
+    broadcastSpectatorStatus();
   }
 
   if (summary.matchType === "singleplayer" && trainingManager) {
@@ -577,7 +662,7 @@ function handleHumanConnection(socket) {
   if (mode === "training") {
     socket.emit("queueStatus", {
       message:
-        "Training mode is active. Open / or /training for the dashboard, or switch mode in /defaults.",
+        "Training mode is active. Open /, /training, or /spectate, or switch mode in /defaults.",
     });
 
     if (trainingManager && DEFAULTS.training?.autoStart) {
@@ -621,6 +706,7 @@ function handleBotConnection(socket) {
 }
 
 io.on("connection", (socket) => {
+  socket.data.isSpectator = socket.handshake.query?.spectator === "1";
   socket.data.isBot = socket.handshake.query?.bot === "1";
   socket.data.botName = String(socket.handshake.query?.botName || "");
   socket.data.botMode = String(socket.handshake.query?.botMode || "");
@@ -632,13 +718,17 @@ io.on("connection", (socket) => {
     socket.emit("pongCheck", sentAt);
   });
 
-  if (socket.data.isBot) {
+  if (socket.data.isSpectator) {
+    handleSpectatorConnection(socket);
+  } else if (socket.data.isBot) {
     handleBotConnection(socket);
   } else {
     handleHumanConnection(socket);
   }
 
   socket.on("inputUpdate", ({ roomId, input }) => {
+    if (socket.data.isSpectator) return;
+
     const knownRoomId = socketToRoom.get(socket.id);
 
     if (!knownRoomId) return;
@@ -663,9 +753,17 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     console.log(
-      socket.data.isBot ? "Bot disconnected:" : "Player disconnected:",
+      socket.data.isSpectator
+        ? "Spectator disconnected:"
+        : socket.data.isBot
+          ? "Bot disconnected:"
+          : "Player disconnected:",
       socket.id
     );
+
+    if (socket.data.isSpectator) {
+      return;
+    }
 
     removeFromQueues(socket.id);
 
