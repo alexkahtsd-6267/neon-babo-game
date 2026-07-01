@@ -3,6 +3,9 @@ const fs = require("fs");
 const path = require("path");
 const { Server } = require("socket.io");
 const { createServerGame } = require("./serverGame");
+const { DEFAULTS } = require("./shared");
+const matchLogger = require("./matchLogger");
+const { createTrainingManager } = require("./trainingManager");
 
 const {
   loadSavedDefaults,
@@ -32,17 +35,13 @@ function serveFile(res, filePath) {
 
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
-
     res.writeHead(200, { "Content-Type": contentType });
     res.end(content);
   });
 }
 
 function sendJson(res, status, data) {
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-  });
-
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(data));
 }
 
@@ -74,12 +73,12 @@ function readJsonBody(req) {
 function canEditDefaults(req) {
   const adminKey = process.env.DEFAULTS_ADMIN_KEY;
 
-  // If no key is configured, editing is open.
-  // For public deployment, you should set DEFAULTS_ADMIN_KEY.
   if (!adminKey) return true;
 
   return req.headers["x-admin-key"] === adminKey;
 }
+
+let trainingManager = null;
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
@@ -106,6 +105,15 @@ const server = http.createServer(async (req, res) => {
       try {
         const body = await readJsonBody(req);
         const updated = updateDefaults(body);
+
+        if (trainingManager) {
+          if (DEFAULTS.game.mode === "training") {
+            trainingManager.ensureRunning("defaults-updated");
+          } else {
+            trainingManager.stopAll("mode changed away from training");
+          }
+        }
+
         sendJson(res, 200, updated);
       } catch (err) {
         console.error("Defaults update error:", err);
@@ -119,10 +127,63 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pathname === "/api/training") {
+    if (trainingManager && DEFAULTS.game.mode === "training" && DEFAULTS.training.autoStart) {
+      trainingManager.ensureRunning("api-status");
+    }
+
+    sendJson(
+      res,
+      200,
+      trainingManager ? trainingManager.getStatus() : { error: "Training manager not ready" }
+    );
+    return;
+  }
+
+  if (pathname === "/api/training/start" && req.method === "POST") {
+    if (!canEditDefaults(req)) {
+      sendJson(res, 401, { error: "Unauthorized" });
+      return;
+    }
+
+    if (DEFAULTS.game.mode !== "training") {
+      DEFAULTS.game.mode = "training";
+    }
+
+    sendJson(res, 200, trainingManager.startTrainingPair("manual-start"));
+    return;
+  }
+
+  if (pathname === "/api/training/stop" && req.method === "POST") {
+    if (!canEditDefaults(req)) {
+      sendJson(res, 401, { error: "Unauthorized" });
+      return;
+    }
+
+    sendJson(res, 200, trainingManager.stopAll("manual-stop"));
+    return;
+  }
+
   let filePath = null;
 
-  if (pathname === "/" || pathname === "/index.html") {
+  if (pathname === "/") {
+    if (DEFAULTS.game.mode === "training") {
+      if (trainingManager && DEFAULTS.training.autoStart) {
+        trainingManager.ensureRunning("dashboard-opened");
+      }
+
+      filePath = path.join(__dirname, "training.html");
+    } else {
+      filePath = path.join(__dirname, "index.html");
+    }
+  } else if (pathname === "/play" || pathname === "/index.html") {
     filePath = path.join(__dirname, "index.html");
+  } else if (pathname === "/training" || pathname === "/training.html") {
+    if (trainingManager && DEFAULTS.game.mode === "training" && DEFAULTS.training.autoStart) {
+      trainingManager.ensureRunning("training-page-opened");
+    }
+
+    filePath = path.join(__dirname, "training.html");
   } else if (pathname === "/defaults" || pathname === "/defaults.html") {
     filePath = path.join(__dirname, "defaults.html");
   } else if (pathname === "/clientNet.js") {
@@ -144,47 +205,286 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-let waitingPlayer = null;
+trainingManager = createTrainingManager({
+  serverUrl: `http://127.0.0.1:${PORT}`,
+});
+
 const matches = new Map();
 const socketToRoom = new Map();
+const matchRecords = new Map();
 
-function clearWaitingPlayerIfMatches(socketId) {
-  if (waitingPlayer && waitingPlayer.id === socketId) {
-    waitingPlayer = null;
+const queues = {
+  multiplayerHumans: [],
+  singleplayerHumans: [],
+  singleplayerBots: [],
+  trainingBots: [],
+};
+
+function socketMeta(socket) {
+  return {
+    id: socket.id,
+    isBot: socket.data.isBot,
+    botName: socket.data.botName || null,
+    botMode: socket.data.botMode || null,
+    profileName: socket.data.profileName || null,
+    runId: socket.data.runId || null,
+  };
+}
+
+function cleanQueue(name) {
+  queues[name] = queues[name].filter((s) => s && s.connected && !socketToRoom.has(s.id));
+}
+
+function pushQueue(name, socket) {
+  cleanQueue(name);
+
+  if (!queues[name].some((s) => s.id === socket.id)) {
+    queues[name].push(socket);
+  }
+}
+
+function shiftQueue(name) {
+  cleanQueue(name);
+  return queues[name].shift() || null;
+}
+
+function removeFromQueues(socketId) {
+  for (const key of Object.keys(queues)) {
+    queues[key] = queues[key].filter((s) => s.id !== socketId);
   }
 }
 
 function makeRoomId(a, b) {
-  return `match_${a}_${b}`;
+  return `match_${a}_${b}_${Date.now()}`;
+}
+
+function startMatchRecord(game, matchType, socketA, socketB) {
+  const matchId = `log_${Date.now()}_${game.roomId}`;
+
+  const players = {
+    [socketA.id]: socketMeta(socketA),
+    [socketB.id]: socketMeta(socketB),
+  };
+
+  const meta = {
+    matchId,
+    roomId: game.roomId,
+    matchType,
+    startedAt: Date.now(),
+    players,
+  };
+
+  matchLogger.startMatch(matchId, meta);
+
+  const hz = Math.max(0.2, Number(DEFAULTS.training.snapshotLogHz) || 2);
+  const intervalMs = Math.floor(1000 / hz);
+
+  const record = {
+    ...meta,
+    game,
+    finished: false,
+    snapshotInterval: setInterval(() => {
+      if (record.finished) return;
+
+      let snapshot = null;
+
+      try {
+        snapshot = game.getSnapshot();
+      } catch (err) {
+        console.error("Snapshot logging error:", err);
+      }
+
+      if (snapshot) {
+        matchLogger.logEvent(matchId, "world.snapshot", snapshot);
+      }
+
+      if (game.state?.ended || snapshot?.winner) {
+        finishMatchRecord(game.roomId, {
+          reason: "ended",
+          winnerSocketId: snapshot?.winner || game.state?.winner || null,
+          snapshot,
+        });
+      }
+    }, intervalMs),
+  };
+
+  matchRecords.set(game.roomId, record);
+
+  if (matchType === "training") {
+    trainingManager.onTrainingMatchStarted(meta);
+  }
+}
+
+function finishMatchRecord(roomId, result = {}) {
+  const record = matchRecords.get(roomId);
+
+  if (!record || record.finished) return;
+
+  record.finished = true;
+  clearInterval(record.snapshotInterval);
+
+  let snapshot = result.snapshot || null;
+
+  try {
+    snapshot = snapshot || record.game.getSnapshot();
+  } catch (_) {}
+
+  const summary = {
+    matchId: record.matchId,
+    roomId,
+    matchType: record.matchType,
+    startedAt: record.startedAt,
+    endedAt: Date.now(),
+    durationMs: Date.now() - record.startedAt,
+    reason: result.reason || "ended",
+    winnerSocketId: result.winnerSocketId || snapshot?.winner || record.game.state?.winner || null,
+    disconnectedSocketId: result.disconnectedSocketId || null,
+    players: record.players,
+    finalSnapshot: snapshot,
+  };
+
+  matchLogger.endMatch(record.matchId, summary);
+  matchRecords.delete(roomId);
+
+  if (record.matchType === "training") {
+    trainingManager.onTrainingMatchEnded(summary);
+  } else if (record.matchType === "singleplayer") {
+    trainingManager.onSingleplayerMatchEnded(summary);
+  }
+}
+
+function createMatch(socketA, socketB, matchType) {
+  if (!socketA?.connected || !socketB?.connected) return false;
+  if (socketToRoom.has(socketA.id) || socketToRoom.has(socketB.id)) return false;
+
+  const roomId = makeRoomId(socketA.id, socketB.id);
+
+  socketA.join(roomId);
+  socketB.join(roomId);
+
+  const game = createServerGame(io, roomId, socketA.id, socketB.id);
+
+  matches.set(roomId, game);
+  socketToRoom.set(socketA.id, roomId);
+  socketToRoom.set(socketB.id, roomId);
+
+  startMatchRecord(game, matchType, socketA, socketB);
+
+  socketA.emit("matchFound", game.getMatchFoundPayload(socketA.id));
+  socketB.emit("matchFound", game.getMatchFoundPayload(socketB.id));
+
+  game.start();
+
+  return true;
+}
+
+function tryPairMultiplayer() {
+  cleanQueue("multiplayerHumans");
+
+  while (queues.multiplayerHumans.length >= 2) {
+    const a = shiftQueue("multiplayerHumans");
+    const b = shiftQueue("multiplayerHumans");
+
+    if (a && b) createMatch(a, b, "multiplayer");
+  }
+}
+
+function tryPairSingleplayer() {
+  cleanQueue("singleplayerHumans");
+  cleanQueue("singleplayerBots");
+
+  while (queues.singleplayerHumans.length >= 1 && queues.singleplayerBots.length >= 1) {
+    const human = shiftQueue("singleplayerHumans");
+    const bot = shiftQueue("singleplayerBots");
+
+    if (human && bot) createMatch(human, bot, "singleplayer");
+  }
+}
+
+function tryPairTraining() {
+  cleanQueue("trainingBots");
+
+  while (queues.trainingBots.length >= 2) {
+    const a = shiftQueue("trainingBots");
+    const b = shiftQueue("trainingBots");
+
+    if (a && b) createMatch(a, b, "training");
+  }
+}
+
+function handleHumanConnection(socket) {
+  const mode = DEFAULTS.game.mode;
+
+  if (mode === "multiplayer") {
+    pushQueue("multiplayerHumans", socket);
+    socket.emit("queueStatus", { message: "Waiting for opponent..." });
+    tryPairMultiplayer();
+    return;
+  }
+
+  if (mode === "singleplayer") {
+    pushQueue("singleplayerHumans", socket);
+    socket.emit("queueStatus", { message: "Starting AI opponent..." });
+    tryPairSingleplayer();
+
+    if (!socketToRoom.has(socket.id)) {
+      trainingManager.spawnSingleplayerBot();
+    }
+
+    return;
+  }
+
+  if (mode === "training") {
+    socket.emit("queueStatus", {
+      message:
+        "Training mode is active. Open / or /training for the dashboard, or switch mode to multiplayer/singleplayer in /defaults.",
+    });
+
+    if (DEFAULTS.training.autoStart) {
+      trainingManager.ensureRunning("human-connected-training-mode");
+    }
+  }
+}
+
+function handleBotConnection(socket) {
+  const botMode = socket.data.botMode;
+
+  if (botMode === "singleplayer") {
+    pushQueue("singleplayerBots", socket);
+    tryPairSingleplayer();
+    return;
+  }
+
+  if (botMode === "training") {
+    pushQueue("trainingBots", socket);
+    tryPairTraining();
+    return;
+  }
+
+  socket.disconnect(true);
 }
 
 io.on("connection", (socket) => {
-  console.log("Player connected:", socket.id);
+  socket.data.isBot = socket.handshake.query?.bot === "1";
+  socket.data.botName = String(socket.handshake.query?.botName || "");
+  socket.data.botMode = String(socket.handshake.query?.botMode || "");
+  socket.data.profileName = String(socket.handshake.query?.profileName || "");
+  socket.data.runId = String(socket.handshake.query?.runId || "");
+
+  console.log(
+    socket.data.isBot ? "Bot connected:" : "Player connected:",
+    socket.id,
+    socket.data.botName || ""
+  );
 
   socket.on("pingCheck", (sentAt) => {
     socket.emit("pongCheck", sentAt);
   });
 
-  if (waitingPlayer && waitingPlayer.connected && waitingPlayer.id !== socket.id) {
-    const roomId = makeRoomId(waitingPlayer.id, socket.id);
-
-    waitingPlayer.join(roomId);
-    socket.join(roomId);
-
-    const game = createServerGame(io, roomId, waitingPlayer.id, socket.id);
-
-    matches.set(roomId, game);
-    socketToRoom.set(waitingPlayer.id, roomId);
-    socketToRoom.set(socket.id, roomId);
-
-    waitingPlayer.emit("matchFound", game.getMatchFoundPayload(waitingPlayer.id));
-    socket.emit("matchFound", game.getMatchFoundPayload(socket.id));
-
-    game.start();
-    waitingPlayer = null;
+  if (socket.data.isBot) {
+    handleBotConnection(socket);
   } else {
-    waitingPlayer = socket;
-    socket.emit("queueStatus", { message: "Waiting for opponent..." });
+    handleHumanConnection(socket);
   }
 
   socket.on("inputUpdate", ({ roomId, input }) => {
@@ -197,13 +497,23 @@ io.on("connection", (socket) => {
 
     if (!game) return;
 
+    const record = matchRecords.get(knownRoomId);
+
+    if (record) {
+      matchLogger.logEvent(record.matchId, "input.update", {
+        socketId: socket.id,
+        isBot: !!socket.data.isBot,
+        input: input || {},
+      });
+    }
+
     game.setInput(socket.id, input || {});
   });
 
   socket.on("disconnect", () => {
-    console.log("Player disconnected:", socket.id);
+    console.log(socket.data.isBot ? "Bot disconnected:" : "Player disconnected:", socket.id);
 
-    clearWaitingPlayerIfMatches(socket.id);
+    removeFromQueues(socket.id);
 
     const roomId = socketToRoom.get(socket.id);
 
@@ -211,6 +521,12 @@ io.on("connection", (socket) => {
       const game = matches.get(roomId);
 
       if (game) {
+        finishMatchRecord(roomId, {
+          reason: "disconnect",
+          disconnectedSocketId: socket.id,
+          winnerSocketId: null,
+        });
+
         game.onDisconnect(socket.id);
         game.stop();
         matches.delete(roomId);
