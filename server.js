@@ -66,7 +66,17 @@ function serveFile(res, filePath) {
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
 
-    res.writeHead(200, { "Content-Type": contentType });
+    const headers = {
+      "Content-Type": contentType,
+    };
+
+    if (ext === ".html" || ext === ".js" || ext === ".css") {
+      headers["Cache-Control"] = "no-store, no-cache, must-revalidate, proxy-revalidate";
+      headers["Pragma"] = "no-cache";
+      headers["Expires"] = "0";
+    }
+
+    res.writeHead(200, headers);
     res.end(content);
   });
 }
@@ -74,6 +84,7 @@ function serveFile(res, filePath) {
 function sendJson(res, status, data) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
   });
 
   res.end(JSON.stringify(data));
@@ -462,12 +473,6 @@ function startMatchRecord(game, matchType, socketA, socketB) {
 
         if (matchType === "training") {
           latestSpectatorSnapshot = snapshot;
-
-          io.to(SPECTATOR_ROOM).emit("spectatorSnapshot", {
-            meta: latestSpectatorMeta,
-            snapshot: latestSpectatorSnapshot,
-            training: trainingManager ? trainingManager.getStatus() : null,
-          });
         }
       }
 
