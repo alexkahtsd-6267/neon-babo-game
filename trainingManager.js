@@ -14,16 +14,21 @@ function loadState() {
   const base = {
     date: todayKey(),
     usedMsToday: 0,
+
     matchesToday: 0,
     singleplayerMatchesToday: 0,
+
     bot1WinsToday: 0,
     bot2WinsToday: 0,
     drawsToday: 0,
+
     lastWinner: null,
     lastResult: null,
+
     currentRunId: null,
     currentRoomId: null,
     currentMatchStartedAt: null,
+
     lastStatus: "Idle",
   };
 
@@ -46,10 +51,12 @@ function saveState(state) {
 
 function createTrainingManager({ serverUrl }) {
   let state = loadState();
+
   let bots = [];
   let trainingStartedAt = null;
   let restartTimer = null;
   let maxMatchTimer = null;
+  let intentionallyStopped = false;
 
   function rolloverIfNeeded() {
     const today = todayKey();
@@ -60,14 +67,18 @@ function createTrainingManager({ serverUrl }) {
       ...state,
       date: today,
       usedMsToday: 0,
+
       matchesToday: 0,
       singleplayerMatchesToday: 0,
+
       bot1WinsToday: 0,
       bot2WinsToday: 0,
       drawsToday: 0,
+
       currentRunId: null,
       currentRoomId: null,
       currentMatchStartedAt: null,
+
       lastStatus: "New training day",
     };
 
@@ -75,11 +86,18 @@ function createTrainingManager({ serverUrl }) {
   }
 
   function limitMs() {
-    return Math.max(1, Number(DEFAULTS.training.dailyLimitMinutes) || 30) * 60 * 1000;
+    const minutes = Math.max(
+      1,
+      Number(DEFAULTS.training?.dailyLimitMinutes) || 30
+    );
+
+    return minutes * 60 * 1000;
   }
 
   function activeElapsedMs() {
-    return trainingStartedAt ? Date.now() - trainingStartedAt : 0;
+    if (!trainingStartedAt) return 0;
+
+    return Date.now() - trainingStartedAt;
   }
 
   function usedMsToday() {
@@ -120,6 +138,8 @@ function createTrainingManager({ serverUrl }) {
   }
 
   function stopAll(reason = "stopped") {
+    intentionallyStopped = true;
+
     clearTimers();
     finalizeTrainingTime();
     stopBots(reason);
@@ -134,34 +154,43 @@ function createTrainingManager({ serverUrl }) {
     return getStatus();
   }
 
-  function startTrainingPair(reason = "start") {
+  function canTrain() {
     rolloverIfNeeded();
 
-    if (DEFAULTS.game.mode !== "training") {
-      state.lastStatus = "Not in training mode";
-      saveState(state);
-
-      return getStatus();
+    if (String(DEFAULTS.game?.mode || "").trim().toLowerCase() !== "training") {
+      return false;
     }
 
-    if (!DEFAULTS.training.enabled) {
-      state.lastStatus = "Training disabled";
-      saveState(state);
-
-      return getStatus();
+    if (!DEFAULTS.training?.enabled) {
+      return false;
     }
 
     if (remainingMsToday() <= 0) {
-      stopAll("Daily training limit reached");
+      return false;
+    }
 
+    return true;
+  }
+
+  function startTrainingPair(reason = "start") {
+    rolloverIfNeeded();
+
+    intentionallyStopped = false;
+
+    if (!canTrain()) {
+      stopAll("Cannot train: mode disabled or daily limit reached");
       return getStatus();
     }
 
-    if (bots.length > 0) return getStatus();
+    if (bots.length > 0) {
+      return getStatus();
+    }
 
     clearTimers();
 
-    const runId = `train_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const runId = `train_${Date.now()}_${Math.random()
+      .toString(16)
+      .slice(2)}`;
 
     trainingStartedAt = Date.now();
 
@@ -172,6 +201,8 @@ function createTrainingManager({ serverUrl }) {
 
     saveState(state);
 
+    console.log("Starting training pair:", runId);
+
     bots = [
       createBotClient({
         serverUrl,
@@ -180,6 +211,7 @@ function createTrainingManager({ serverUrl }) {
         profileName: "bot1",
         runId,
       }),
+
       createBotClient({
         serverUrl,
         botName: "Training Bot 2",
@@ -189,12 +221,26 @@ function createTrainingManager({ serverUrl }) {
       }),
     ];
 
-    const maxMs = Math.max(15, Number(DEFAULTS.training.maxMatchSeconds) || 180) * 1000;
+    const maxMatchMs =
+      Math.max(15, Number(DEFAULTS.training?.maxMatchSeconds) || 180) * 1000;
+
+    const timeoutMs = Math.min(maxMatchMs, Math.max(1000, remainingMsToday()));
 
     maxMatchTimer = setTimeout(() => {
-      stopAll("Training match timed out");
-      scheduleNextIfAllowed();
-    }, Math.min(maxMs, remainingMsToday()));
+      console.log("Training match timed out.");
+      state.lastStatus = "Training match timed out";
+      saveState(state);
+
+      stopBots("training-match-timeout");
+
+      setTimeout(() => {
+        if (!intentionallyStopped) {
+          finalizeTrainingTime();
+          bots = [];
+          scheduleNextIfAllowed();
+        }
+      }, 500);
+    }, timeoutMs);
 
     return getStatus();
   }
@@ -202,19 +248,14 @@ function createTrainingManager({ serverUrl }) {
   function ensureRunning(reason = "ensure") {
     rolloverIfNeeded();
 
-    if (DEFAULTS.game.mode !== "training") {
-      return stopAll("Not in training mode");
-    }
-
-    if (!DEFAULTS.training.autoStart) {
+    if (!DEFAULTS.training?.autoStart) {
       state.lastStatus = "Training autoStart disabled";
       saveState(state);
-
       return getStatus();
     }
 
-    if (remainingMsToday() <= 0) {
-      return stopAll("Daily training limit reached");
+    if (!canTrain()) {
+      return stopAll("Daily training limit reached or training disabled");
     }
 
     if (bots.length === 0) {
@@ -227,30 +268,24 @@ function createTrainingManager({ serverUrl }) {
   function scheduleNextIfAllowed() {
     clearTimers();
 
-    if (DEFAULTS.game.mode !== "training") return;
-    if (!DEFAULTS.training.enabled) return;
-
-    if (remainingMsToday() <= 0) {
-      stopAll("Daily training limit reached");
+    if (intentionallyStopped) return;
+    if (!canTrain()) {
+      stopAll("Daily training limit reached or training disabled");
       return;
     }
 
-    const delay = Math.max(250, Number(DEFAULTS.training.restartDelayMs) || 1500);
+    const delay = Math.max(
+      250,
+      Number(DEFAULTS.training?.restartDelayMs) || 1500
+    );
+
+    state.lastStatus = `Next training match in ${delay}ms`;
+    saveState(state);
 
     restartTimer = setTimeout(() => {
       bots = [];
       startTrainingPair("next match");
     }, delay);
-  }
-
-  function spawnSingleplayerBot() {
-    return createBotClient({
-      serverUrl,
-      botName: "Singleplayer Bot",
-      botMode: "singleplayer",
-      profileName: "bot1",
-      runId: `single_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-    });
   }
 
   function onTrainingMatchStarted(meta) {
@@ -262,6 +297,8 @@ function createTrainingManager({ serverUrl }) {
   }
 
   function onTrainingMatchEnded(summary) {
+    if (intentionallyStopped) return;
+
     clearTimers();
     finalizeTrainingTime();
     stopBots("training-match-ended");
@@ -284,13 +321,19 @@ function createTrainingManager({ serverUrl }) {
       state.drawsToday += 1;
     }
 
-    brainStore.recordMatchResult(summary);
+    try {
+      brainStore.recordMatchResult(summary);
+    } catch (err) {
+      console.error("Could not record training brain result:", err);
+    }
 
-    state.lastStatus = remainingMsToday() > 0
-      ? "Training match ended"
-      : "Daily training limit reached";
+    state.lastStatus =
+      remainingMsToday() > 0
+        ? "Training match ended"
+        : "Daily training limit reached";
 
     saveState(state);
+
     scheduleNextIfAllowed();
   }
 
@@ -300,7 +343,12 @@ function createTrainingManager({ serverUrl }) {
     state.singleplayerMatchesToday += 1;
     state.lastResult = summary.reason || "singleplayer-ended";
 
-    brainStore.recordMatchResult(summary);
+    try {
+      brainStore.recordMatchResult(summary);
+    } catch (err) {
+      console.error("Could not record singleplayer brain result:", err);
+    }
+
     saveState(state);
   }
 
@@ -309,12 +357,23 @@ function createTrainingManager({ serverUrl }) {
 
     const used = usedMsToday();
     const limit = limitMs();
-    const brain = brainStore.loadBrain();
+
+    let brain = null;
+
+    try {
+      brain = brainStore.loadBrain();
+    } catch (_) {
+      brain = {
+        version: "unknown",
+        profiles: {},
+      };
+    }
 
     return {
-      mode: DEFAULTS.game.mode,
-      trainingEnabled: !!DEFAULTS.training.enabled,
-      autoStart: !!DEFAULTS.training.autoStart,
+      mode: DEFAULTS.game?.mode || "multiplayer",
+      trainingEnabled: !!DEFAULTS.training?.enabled,
+      autoStart: !!DEFAULTS.training?.autoStart,
+
       active: bots.length > 0,
 
       dailyLimitMs: limit,
@@ -335,7 +394,9 @@ function createTrainingManager({ serverUrl }) {
 
       currentRunId: state.currentRunId,
       currentRoomId: state.currentRoomId,
-      currentMatchMs: state.currentMatchStartedAt ? Date.now() - state.currentMatchStartedAt : 0,
+      currentMatchMs: state.currentMatchStartedAt
+        ? Date.now() - state.currentMatchStartedAt
+        : 0,
 
       lastStatus: state.lastStatus,
 
@@ -348,10 +409,11 @@ function createTrainingManager({ serverUrl }) {
     ensureRunning,
     startTrainingPair,
     stopAll,
-    spawnSingleplayerBot,
+
     onTrainingMatchStarted,
     onTrainingMatchEnded,
     onSingleplayerMatchEnded,
+
     getStatus,
   };
 }
