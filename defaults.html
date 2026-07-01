@@ -231,15 +231,31 @@
       return Math.max(min, Math.min(max, value));
     }
 
+    function deleteDeprecatedDefaults(obj) {
+      if (obj && obj.bots && Object.prototype.hasOwnProperty.call(obj.bots, "brainMode")) {
+        delete obj.bots.brainMode;
+      }
+    }
+
     function getFriendlyLabel(pathString) {
       const labels = {
         "game.mode": "Game Mode",
         "singleplayer.difficulty": "Singleplayer Difficulty",
 
         "bots": "Bots",
-        "bots.brainMode": "Bot Brain Mode",
-        "bots.aggressionLevel": "Bot Aggression Levels",
 
+        "bots.basicBrainChancePercent": "Basic Bot Brain Chance %",
+
+        "bots.bufferMethod": "Buffer Method",
+        "bots.bufferMethod.enabled": "Buffer Method: Enable",
+        "bots.bufferMethod.durationSeconds": "Buffer Method: Duration seconds",
+        "bots.bufferMethod.stuckAggressionLevel": "Buffer Method: Temporary aggression level",
+
+        "bots.humanBrain": "Human Brain",
+        "bots.humanBrain.randomizedEvents": "Human Brain: Randomized events",
+        "bots.humanBrain.imperfections": "Human Brain: Imperfections",
+
+        "bots.aggressionLevel": "Bot Aggression Levels",
         "bots.aggressionLevel.flagPursuit": "Aggression Level: Flag pursuit",
         "bots.aggressionLevel.flagDefense": "Aggression Level: Flag defense",
         "bots.aggressionLevel.baseDefense": "Aggression Level: Base defense",
@@ -252,6 +268,42 @@
     }
 
     function getNumberBounds(pathString) {
+      if (pathString === "bots.basicBrainChancePercent") {
+        return {
+          min: 0,
+          max: 100,
+          step: 1,
+          label: "number, 0–100",
+        };
+      }
+
+      if (pathString === "bots.bufferMethod.durationSeconds") {
+        return {
+          min: 1,
+          max: 30,
+          step: 1,
+          label: "seconds, 1–30",
+        };
+      }
+
+      if (pathString === "bots.bufferMethod.stuckAggressionLevel") {
+        return {
+          min: 0,
+          max: 10,
+          step: 1,
+          label: "number, 0–10",
+        };
+      }
+
+      if (pathString.startsWith("bots.humanBrain.")) {
+        return {
+          min: 0,
+          max: 10,
+          step: 1,
+          label: "number, 0–10",
+        };
+      }
+
       if (pathString.startsWith("bots.aggressionLevel.")) {
         return {
           min: 0,
@@ -265,13 +317,6 @@
     }
 
     function getDropdownOptions(pathString) {
-      if (pathString === "bots.brainMode") {
-        return [
-          { value: "basic", label: "Basic bot brain" },
-          { value: "advanced", label: "Advanced bot brain" },
-        ];
-      }
-
       if (pathString === "game.mode") {
         return [
           { value: "multiplayer", label: "Multiplayer" },
@@ -295,11 +340,6 @@
 
     function normalizeDropdownValue(pathString, value) {
       const raw = String(value || "").trim().toLowerCase().replace(/\s+/g, "");
-
-      if (pathString === "bots.brainMode") {
-        if (raw === "advanced" || raw === "smart" || raw === "2") return "advanced";
-        return "basic";
-      }
 
       if (pathString === "game.mode") {
         if (raw === "singleplayer" || raw === "single") return "singleplayer";
@@ -423,6 +463,10 @@
         const nextPath = [...path, key];
         const pathString = pathToString(nextPath);
 
+        if (pathString === "bots.brainMode") {
+          continue;
+        }
+
         if (isPlainObject(value)) {
           const section = document.createElement("div");
           section.className = "section";
@@ -508,6 +552,7 @@
         }
 
         defaultsData = await res.json();
+        deleteDeprecatedDefaults(defaultsData);
 
         rootEl.innerHTML = "";
         renderObject(defaultsData, rootEl);
@@ -522,6 +567,8 @@
     async function saveDefaults() {
       try {
         setStatus("Saving...");
+
+        deleteDeprecatedDefaults(defaultsData);
 
         const headers = {
           "Content-Type": "application/json",
@@ -543,6 +590,7 @@
         }
 
         defaultsData = await res.json();
+        deleteDeprecatedDefaults(defaultsData);
 
         rootEl.innerHTML = "";
         renderObject(defaultsData, rootEl);
