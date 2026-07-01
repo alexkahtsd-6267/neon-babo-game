@@ -18,8 +18,50 @@ function makeMemory() {
   };
 }
 
+function n(value, fallback) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function bool(value, fallback) {
+  if (typeof value === "boolean") return value;
+  return fallback;
+}
+
+function getBotConfig(profile = {}) {
+  return {
+    aggression: n(profile.aggression, 0.9),
+    idealDistance: n(profile.idealDistance, 520),
+    strafeAmount: n(profile.strafeAmount, 0.65),
+    grenadeChance: n(profile.grenadeChance, 0.04),
+    sniperChance: n(profile.sniperChance, 0.035),
+    ballChance: n(profile.ballChance, 0.08),
+    blockChance: n(profile.blockChance, 0.45),
+    dashWhenHpBelow: n(profile.dashWhenHpBelow, 0.45),
+    retreatWhenHpBelow: n(profile.retreatWhenHpBelow, 0.28),
+
+    reactionMs: n(profile.reactionMs, 0),
+    aimErrorRadians: n(profile.aimErrorRadians, 0),
+    fireMultiplier: n(profile.fireMultiplier, 1),
+    movementMultiplier: n(profile.movementMultiplier, 1),
+
+    allowBall: bool(profile.allowBall, true),
+    allowGrenade: bool(profile.allowGrenade, true),
+    allowSniper: bool(profile.allowSniper, true),
+    allowMolotov: bool(profile.allowMolotov, true),
+    allowKnife: bool(profile.allowKnife, true),
+    allowBlock: bool(profile.allowBlock, true),
+    allowDash: bool(profile.allowDash, true),
+
+    rate: n(profile.rate, 15),
+    speed: n(profile.speed, 1500),
+    dpsMult: n(profile.dpsMult, 1),
+  };
+}
+
 function vectorToKeys(x, y, movementMultiplier = 1) {
-  const threshold = 0.25 / Math.max(0.2, movementMultiplier);
+  const safeMove = Math.max(0.2, n(movementMultiplier, 1));
+  const threshold = 0.25 / safeMove;
 
   return {
     up: y < -threshold,
@@ -30,6 +72,8 @@ function vectorToKeys(x, y, movementMultiplier = 1) {
 }
 
 function defaultInput(profile, aim = 0) {
+  const cfg = getBotConfig(profile);
+
   return {
     up: false,
     down: false,
@@ -58,14 +102,14 @@ function defaultInput(profile, aim = 0) {
     sniperPressed: false,
     molotovPressed: false,
 
-    rate: profile.rate,
-    speed: profile.speed,
-    dpsMult: profile.dpsMult,
+    rate: cfg.rate,
+    speed: cfg.speed,
+    dpsMult: cfg.dpsMult,
   };
 }
 
-function addAimError(aim, profile) {
-  const error = Number(profile.aimErrorRadians) || 0;
+function addAimError(aim, cfg) {
+  const error = n(cfg.aimErrorRadians, 0);
 
   if (error <= 0) return aim;
 
@@ -73,17 +117,19 @@ function addAimError(aim, profile) {
 }
 
 function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
+  const cfg = getBotConfig(profile);
+
   const me = snapshot?.players?.[mySocketId];
   const enemy = snapshot?.players?.[enemySocketId];
 
   if (!me || !enemy || !me.alive) {
-    return defaultInput(profile, 0);
+    return defaultInput(cfg, 0);
   }
 
   const now = Date.now();
   const d = dist(me.x, me.y, enemy.x, enemy.y);
   const trueAim = angleTo(me.x, me.y, enemy.x, enemy.y);
-  const aim = addAimError(trueAim, profile);
+  const aim = addAimError(trueAim, cfg);
   const los = hasLineOfSight(me.x, me.y, enemy.x, enemy.y);
 
   const hpPct = me.hp / Math.max(1, me.hpMax);
@@ -96,12 +142,12 @@ function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
 
   let toward = 0;
 
-  if (d > profile.idealDistance + 90) toward = 1;
-  if (d < profile.idealDistance - 90) toward = -1;
-  if (hpPct < profile.retreatWhenHpBelow) toward = -1;
+  if (d > cfg.idealDistance + 90) toward = 1;
+  if (d < cfg.idealDistance - 90) toward = -1;
+  if (hpPct < cfg.retreatWhenHpBelow) toward = -1;
   if (enemyHpPct < 0.25 && hpPct > 0.35) toward = 1;
 
-  toward *= Number(profile.movementMultiplier) || 1;
+  toward *= cfg.movementMultiplier;
 
   const ux = Math.cos(trueAim);
   const uy = Math.sin(trueAim);
@@ -109,48 +155,48 @@ function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
   const sx = -uy * memory.strafeDir;
   const sy = ux * memory.strafeDir;
 
-  const moveX = ux * toward + sx * profile.strafeAmount * profile.movementMultiplier;
-  const moveY = uy * toward + sy * profile.strafeAmount * profile.movementMultiplier;
+  const moveX = ux * toward + sx * cfg.strafeAmount * cfg.movementMultiplier;
+  const moveY = uy * toward + sy * cfg.strafeAmount * cfg.movementMultiplier;
 
   const mag = Math.hypot(moveX, moveY) || 1;
 
   const keys = vectorToKeys(
     moveX / mag,
     moveY / mag,
-    profile.movementMultiplier
+    cfg.movementMultiplier
   );
 
   const enemyShooting = !!enemy.shooting;
 
   const shouldBlock =
-    !!profile.allowBlock &&
+    cfg.allowBlock &&
     enemyShooting &&
     d < 800 &&
-    Math.random() < profile.blockChance;
+    Math.random() < cfg.blockChance;
 
   let dashPressed = false;
 
   if (
-    !!profile.allowDash &&
-    hpPct < profile.dashWhenHpBelow &&
+    cfg.allowDash &&
+    hpPct < cfg.dashWhenHpBelow &&
     now >= memory.nextDashAt
   ) {
     memory.dashPulseUntil = now + 100;
     memory.nextDashAt = now + 1800 + Math.random() * 1600;
   }
 
-  if (!!profile.allowDash && now < memory.dashPulseUntil) {
+  if (cfg.allowDash && now < memory.dashPulseUntil) {
     dashPressed = true;
   }
 
   let grenadePressed = false;
 
   if (
-    !!profile.allowGrenade &&
+    cfg.allowGrenade &&
     los &&
     d < 1000 &&
     now >= memory.nextGrenadeAt &&
-    Math.random() < profile.grenadeChance
+    Math.random() < cfg.grenadeChance
   ) {
     grenadePressed = true;
     memory.nextGrenadeAt = now + 3500 + Math.random() * 4000;
@@ -159,12 +205,12 @@ function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
   let sniperPressed = false;
 
   if (
-    !!profile.allowSniper &&
+    cfg.allowSniper &&
     los &&
     d < 1400 &&
     now >= memory.nextSniperAt &&
     me.mana >= 8000 &&
-    Math.random() < profile.sniperChance
+    Math.random() < cfg.sniperChance
   ) {
     sniperPressed = true;
     memory.nextSniperAt = now + 2500 + Math.random() * 4500;
@@ -173,7 +219,7 @@ function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
   let knifePressed = false;
 
   if (
-    !!profile.allowKnife &&
+    cfg.allowKnife &&
     d < 74 &&
     now >= memory.nextKnifeAt
   ) {
@@ -184,7 +230,7 @@ function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
   let molotovPressed = false;
 
   if (
-    !!profile.allowMolotov &&
+    cfg.allowMolotov &&
     los &&
     d < 700 &&
     now >= memory.nextMolotovAt &&
@@ -195,16 +241,16 @@ function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
   }
 
   const ball =
-    !!profile.allowBall &&
+    cfg.allowBall &&
     los &&
     d < 950 &&
-    Math.random() < profile.ballChance;
+    Math.random() < cfg.ballChance;
 
   const fire =
     los &&
     !shouldBlock &&
     d < 1300 &&
-    Math.random() < profile.aggression * profile.fireMultiplier;
+    Math.random() < cfg.aggression * cfg.fireMultiplier;
 
   return {
     ...keys,
@@ -231,15 +277,17 @@ function decideNow(snapshot, mySocketId, enemySocketId, profile, memory) {
     sniperPressed,
     molotovPressed,
 
-    rate: clamp(profile.rate, 1, 1000),
-    speed: clamp(profile.speed, 1, 20000),
-    dpsMult: clamp(profile.dpsMult, 1, 2),
+    rate: clamp(cfg.rate, 1, 1000),
+    speed: clamp(cfg.speed, 1, 20000),
+    dpsMult: clamp(cfg.dpsMult, 1, 2),
   };
 }
 
 function decide(snapshot, mySocketId, enemySocketId, profile, memory) {
+  const cfg = getBotConfig(profile);
+
   const now = Date.now();
-  const reactionMs = Math.max(0, Number(profile.reactionMs) || 0);
+  const reactionMs = Math.max(0, n(cfg.reactionMs, 0));
 
   if (
     memory.cachedInput &&
@@ -249,7 +297,7 @@ function decide(snapshot, mySocketId, enemySocketId, profile, memory) {
     return memory.cachedInput;
   }
 
-  const nextInput = decideNow(snapshot, mySocketId, enemySocketId, profile, memory);
+  const nextInput = decideNow(snapshot, mySocketId, enemySocketId, cfg, memory);
 
   memory.cachedInput = nextInput;
   memory.lastDecisionAt = now;
