@@ -28,6 +28,10 @@ const FLAG_BASES = {
 };
 
 const DEFAULTS = {
+  game: {
+    mode: "multiplayer",
+  },
+
   hpMax: 6000,
   manaMax: 10000,
   manaRegen: 1500,
@@ -76,8 +80,17 @@ const DEFAULTS = {
   dashMax: 4,
   dashRechargeTime: 2.1,
 
-  p1: { rate: 15, speed: 1500, dpsMult: 1.0 },
-  p2: { rate: 15, speed: 1500, dpsMult: 1.0 },
+  p1: {
+    rate: 15,
+    speed: 1500,
+    dpsMult: 1.0,
+  },
+
+  p2: {
+    rate: 15,
+    speed: 1500,
+    dpsMult: 1.0,
+  },
 
   damageScalePoints: [
     { speed: 700, scale: 1 },
@@ -132,24 +145,29 @@ function angleTo(ax, ay, bx, by) {
 
 function baseDpsFromRate(rate) {
   const r = clamp(rate, 1, 1000);
+
   const points = [
     { x: 1, y: 1000 },
     { x: 10, y: 900 },
     { x: 100, y: 750 },
     { x: 1000, y: 550 },
   ];
+
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i];
     const b = points[i + 1];
+
     if (r >= a.x && r <= b.x) {
       return lerp(a.y, b.y, (r - a.x) / (b.x - a.x));
     }
   }
+
   return 550;
 }
 
 function speedMultiplier(speed) {
   const s = clamp(speed, 1, 20000);
+
   const points = [
     { x: 1, y: 5.5 },
     { x: 2, y: 5.0 },
@@ -158,13 +176,16 @@ function speedMultiplier(speed) {
     { x: 2000, y: 2.0 },
     { x: 20000, y: 1.0 },
   ];
+
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i];
     const b = points[i + 1];
+
     if (s >= a.x && s <= b.x) {
       return lerp(a.y, b.y, (s - a.x) / (b.x - a.x));
     }
   }
+
   return 1;
 }
 
@@ -175,6 +196,7 @@ function totalAttackDps(rate, speed) {
 function projectileRadiusFromSpeed(speed) {
   const t = 1 - (clamp(speed, 1, 20000) - 1) / (20000 - 1);
   const m = speedMultiplier(speed);
+
   return 4 + t * 16 + (m - 1) * 1.2;
 }
 
@@ -191,6 +213,7 @@ function damageScaleFromSpeed(speed) {
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i];
     const b = pts[i + 1];
+
     if (speed >= a.speed && speed <= b.speed) {
       const t = (speed - a.speed) / Math.max(1e-9, b.speed - a.speed);
       return lerp(a.scale, b.scale, t);
@@ -202,11 +225,13 @@ function damageScaleFromSpeed(speed) {
 
 function manaDrainPerSecond(mult) {
   const t = clamp(mult, 1, 2) - 1;
+
   return lerp(DEFAULTS.drainX1, DEFAULTS.drainX2, t);
 }
 
 function manaCostPerShot(mult, rate) {
   const r = clamp(rate, 1, 1000);
+
   return manaDrainPerSecond(mult) / r;
 }
 
@@ -225,6 +250,7 @@ function projectileRadiusForPlayer(player) {
       DEFAULTS.sizeBoostScale
     );
   }
+
   return projectileRadiusFromSpeed(player.speed);
 }
 
@@ -241,7 +267,12 @@ function ballManaCostPerShot(player) {
 
 function perShotDamage(player) {
   const scale = damageScaleFromSpeed(player.speed);
-  return (totalAttackDps(player.rate, player.speed) * player.dpsMult / Math.max(player.rate, 1)) * scale;
+
+  return (
+    totalAttackDps(player.rate, player.speed) *
+    player.dpsMult /
+    Math.max(player.rate, 1)
+  ) * scale;
 }
 
 function circleRectPush(circle, rect) {
@@ -259,10 +290,13 @@ function circleRectPush(circle, rect) {
   if (d2 < r * r) {
     const d = Math.sqrt(d2) || 0.0001;
     const overlap = r - d;
+
     circle.x += (dx / d) * overlap;
     circle.y += (dy / d) * overlap;
+
     if ("vx" in circle) circle.vx *= 0.6;
     if ("vy" in circle) circle.vy *= 0.6;
+
     return true;
   }
 
@@ -276,10 +310,12 @@ function keepInArena(entity) {
 
 function resolveWallsForCircle(entity) {
   keepInArena(entity);
+
   for (let pass = 0; pass < 3; pass++) {
     for (const wall of WALLS) {
       circleRectPush(entity, wall);
     }
+
     keepInArena(entity);
   }
 }
@@ -287,8 +323,10 @@ function resolveWallsForCircle(entity) {
 function bulletHitsRect(bullet, wall) {
   const cx = clamp(bullet.x, wall.x, wall.x + wall.w);
   const cy = clamp(bullet.y, wall.y, wall.y + wall.h);
+
   const dx = bullet.x - cx;
   const dy = bullet.y - cy;
+
   return dx * dx + dy * dy < bullet.r * bullet.r;
 }
 
@@ -300,6 +338,7 @@ function reflectOnRect(body, wall) {
 
   const cx = clamp(body.x, left, right);
   const cy = clamp(body.y, top, bottom);
+
   const dx = body.x - cx;
   const dy = body.y - cy;
 
@@ -314,6 +353,7 @@ function reflectOnRect(body, wall) {
 
 function hasLineOfSight(ax, ay, bx, by) {
   const steps = 28;
+
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const x = lerp(ax, bx, t);
@@ -330,26 +370,35 @@ function hasLineOfSight(ax, ay, bx, by) {
       }
     }
   }
+
   return true;
 }
 
 function pointToSegmentDistance(px, py, ax, ay, bx, by) {
   const dx = bx - ax;
   const dy = by - ay;
+
   const len2 = dx * dx + dy * dy;
+
   if (len2 <= 1e-9) return Math.hypot(px - ax, py - ay);
+
   const t = clamp(((px - ax) * dx + (py - ay) * dy) / len2, 0, 1);
+
   const cx = ax + dx * t;
   const cy = ay + dy * t;
+
   return Math.hypot(px - cx, py - cy);
 }
 
 function raycastBeamEnd(x, y, ang, maxLen = 5000) {
   const step = 8;
+
   let px = x;
   let py = y;
+
   const dx = Math.cos(ang) * step;
   const dy = Math.sin(ang) * step;
+
   const steps = Math.ceil(maxLen / step);
 
   for (let i = 0; i < steps; i++) {
@@ -357,7 +406,11 @@ function raycastBeamEnd(x, y, ang, maxLen = 5000) {
     py += dy;
 
     if (px < 0 || py < 0 || px > ARENA.w || py > ARENA.h) {
-      return { x: clamp(px, 0, ARENA.w), y: clamp(py, 0, ARENA.h), hitWall: true };
+      return {
+        x: clamp(px, 0, ARENA.w),
+        y: clamp(py, 0, ARENA.h),
+        hitWall: true,
+      };
     }
 
     for (const wall of WALLS) {
@@ -367,12 +420,20 @@ function raycastBeamEnd(x, y, ang, maxLen = 5000) {
         py >= wall.y &&
         py <= wall.y + wall.h
       ) {
-        return { x: px - dx, y: py - dy, hitWall: true };
+        return {
+          x: px - dx,
+          y: py - dy,
+          hitWall: true,
+        };
       }
     }
   }
 
-  return { x: px, y: py, hitWall: false };
+  return {
+    x: px,
+    y: py,
+    hitWall: false,
+  };
 }
 
 function makePlayerState(id, slot) {
@@ -450,15 +511,18 @@ module.exports = {
   DEFAULTS,
   RATE_PRESETS,
   SPEED_PRESETS,
+
   clamp,
   lerp,
   dist,
   angleTo,
+
   baseDpsFromRate,
   speedMultiplier,
   totalAttackDps,
   projectileRadiusFromSpeed,
   damageScaleFromSpeed,
+
   manaDrainPerSecond,
   manaCostPerShot,
   currentSizeBoostActive,
@@ -467,6 +531,7 @@ module.exports = {
   attackManaDrainPerSecond,
   ballManaCostPerShot,
   perShotDamage,
+
   circleRectPush,
   keepInArena,
   resolveWallsForCircle,
@@ -475,5 +540,6 @@ module.exports = {
   hasLineOfSight,
   pointToSegmentDistance,
   raycastBeamEnd,
+
   makePlayerState,
 };
