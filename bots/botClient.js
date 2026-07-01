@@ -1,6 +1,8 @@
 const { io } = require("socket.io-client");
+const { DEFAULTS } = require("../shared");
 const brainStore = require("./botBrainStore");
 const simpleBrain = require("./simpleBotBrain");
+const { applyDifficulty, normalizeDifficulty } = require("./difficultyProfiles");
 
 function createBotClient({
   serverUrl,
@@ -8,8 +10,20 @@ function createBotClient({
   botMode = "singleplayer",
   profileName = "bot1",
   runId = "manual",
+  difficulty = null,
 }) {
-  const profile = brainStore.getProfile(profileName);
+  const baseProfile = brainStore.getProfile(profileName);
+
+  const difficultyValue =
+    difficulty ||
+    DEFAULTS.singleplayer?.difficulty ||
+    "easy";
+
+  const profile =
+    botMode === "singleplayer"
+      ? applyDifficulty(baseProfile, difficultyValue)
+      : baseProfile;
+
   const memory = simpleBrain.makeMemory();
 
   const socket = io(serverUrl, {
@@ -21,6 +35,7 @@ function createBotClient({
       botMode,
       profileName,
       runId,
+      difficulty: normalizeDifficulty(difficultyValue),
     },
   });
 
@@ -40,7 +55,10 @@ function createBotClient({
 
   socket.on("connect", () => {
     state.mySocketId = socket.id;
-    console.log(`${botName} connected: ${socket.id}`);
+    console.log(
+      `${botName} connected: ${socket.id}`,
+      botMode === "singleplayer" ? `difficulty=${profile.difficultyLabel}` : ""
+    );
   });
 
   socket.on("matchFound", (data) => {
@@ -107,6 +125,7 @@ function createBotClient({
     botMode,
     profileName,
     runId,
+    difficulty: profile.difficulty || null,
   };
 }
 
