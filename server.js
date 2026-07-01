@@ -8,6 +8,7 @@ const matchLogger = require("./matchLogger");
 const { createBotClient } = require("./bots/botClient");
 const { createTrainingManager } = require("./trainingManager");
 const { getLearningLog } = require("./learningLogStore");
+const { addManualEntry } = require("./manualLearningStore");
 
 const {
   loadSavedDefaults,
@@ -71,7 +72,8 @@ function serveFile(res, filePath) {
     };
 
     if (ext === ".html" || ext === ".js" || ext === ".css") {
-      headers["Cache-Control"] = "no-store, no-cache, must-revalidate, proxy-revalidate";
+      headers["Cache-Control"] =
+        "no-store, no-cache, must-revalidate, proxy-revalidate";
       headers["Pragma"] = "no-cache";
       headers["Expires"] = "0";
     }
@@ -185,6 +187,32 @@ const server = http.createServer(async (req, res) => {
       singleplayerDifficulty: getSingleplayerDifficulty(),
       rawSingleplayerDifficulty: DEFAULTS.singleplayer?.difficulty,
     });
+    return;
+  }
+
+  if (pathname === "/api/log/entry" && req.method === "POST") {
+    if (!canEditDefaults(req)) {
+      sendJson(res, 401, { error: "Unauthorized" });
+      return;
+    }
+
+    try {
+      const body = await readJsonBody(req);
+      const entry = addManualEntry(body);
+
+      sendJson(res, 200, {
+        ok: true,
+        entry,
+      });
+    } catch (err) {
+      console.error("Manual learning entry error:", err);
+
+      sendJson(res, 400, {
+        ok: false,
+        error: "Could not save manual learning entry",
+      });
+    }
+
     return;
   }
 
